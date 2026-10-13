@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#fcfcfb">
+<title>Homework HQ</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>">
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%232a78d6'/><text x='50' y='68' font-size='56' text-anchor='middle'>📚</text></svg>">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f4f2; --surface: #fcfcfb; --surface-2: #f0efec; --border: #e2e1dc;
+  --text: #0b0b0b; --text-2: #52514e; --muted: #7a7974;
+  --accent: #2a78d6; --accent-ink: #fff;
+  --good: #0ca30c; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
+  --good-bg: #e8f6e8; --warning-bg: #fff4dc; --serious-bg: #fdeee7; --critical-bg: #fbe9e9;
+  --line: #2a78d6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #111110; --surface: #1a1a19; --surface-2: #232321; --border: #33332f;
+    --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e86;
+    --accent: #3987e5; --accent-ink: #fff;
+    --good-bg: #13291a; --warning-bg: #2e2510; --serious-bg: #2f1e16; --critical-bg: #321617;
+    --line: #3987e5;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111110; --surface: #1a1a19; --surface-2: #232321; --border: #33332f;
+  --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e86;
+  --accent: #3987e5; --accent-ink: #fff;
+  --good-bg: #13291a; --warning-bg: #2e2510; --serious-bg: #2f1e16; --critical-bg: #321617;
+  --line: #3987e5;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif; }
+a { color: var(--accent); }
+.wrap { max-width: 860px; margin: 0 auto; padding: 0 16px 64px; }
+header { padding: 20px 0 8px; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+h1 { font-size: 24px; margin: 0; letter-spacing: -.01em; }
+.sub { color: var(--text-2); font-size: 14px; }
+.stale { color: var(--critical); font-weight: 600; }
+h2 { font-size: 18px; margin: 28px 0 4px; }
+h2 + .hint { margin-top: 0; }
+.hint { color: var(--text-2); font-size: 14px; margin: 4px 0 12px; }
+
+/* scorecard */
+.tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0 4px; }
+@media (max-width: 560px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+.tile .n { font-size: 30px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.tile .l { font-size: 13px; color: var(--text-2); }
+.tile.bad { border-color: var(--critical); background: var(--critical-bg); }
+.tile.warn { border-color: var(--warning); background: var(--warning-bg); }
+.tile.ok { border-color: var(--good); background: var(--good-bg); }
+
+/* tabs */
+nav { position: sticky; top: 0; z-index: 5; background: var(--bg); padding: 8px 0; margin: 8px 0 0;
+  display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+nav button { flex: 0 0 auto; border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  padding: 8px 14px; border-radius: 999px; font: inherit; font-size: 15px; cursor: pointer; }
+nav button[aria-selected="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+nav .count { display: inline-block; min-width: 20px; padding: 0 6px; margin-left: 4px; border-radius: 999px;
+  background: var(--critical); color: #fff; font-size: 12px; font-weight: 700; text-align: center; }
+
+/* cards */
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin: 8px 0; }
+.card.missing { border-left: 4px solid var(--critical); }
+.card.overdue { border-left: 4px solid var(--serious); }
+.card.recovery { border-left: 4px solid var(--good); }
+.card.test { border-left: 4px solid var(--accent); }
+.row { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.title { font-weight: 600; }
+.meta { color: var(--text-2); font-size: 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.chip { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--text-2); white-space: nowrap; }
+.chip.critical { background: var(--critical-bg); color: var(--critical); }
+.chip.serious { background: var(--serious-bg); color: var(--text); }
+.chip.warning { background: var(--warning-bg); color: var(--text); }
+.chip.good { background: var(--good-bg); color: var(--text); }
+.chip.info { background: var(--surface-2); color: var(--accent); }
+.gain { font-weight: 700; color: var(--good); white-space: nowrap; }
+.quote { margin: 8px 0 0; padding: 6px 10px; border-left: 3px solid var(--border); color: var(--text-2); font-size: 14px; font-style: italic; }
+.quote b { font-style: normal; color: var(--text); }
+details.desc summary { cursor: pointer; color: var(--accent); font-size: 14px; margin-top: 6px; }
+details.desc p { font-size: 14px; color: var(--text-2); margin: 6px 0 0; }
+.btn { display: inline-block; margin-top: 8px; padding: 6px 12px; border-radius: 8px; background: var(--accent); color: var(--accent-ink);
+  text-decoration: none; font-size: 14px; font-weight: 600; }
+.empty { background: var(--good-bg); border: 1px solid var(--good); border-radius: 12px; padding: 12px 14px; margin: 8px 0; }
+.day { font-weight: 700; margin: 18px 0 4px; font-size: 15px; }
+.day.today { color: var(--accent); }
+
+/* grades */
+.course { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin: 10px 0; overflow: hidden; }
+.course > summary { list-style: none; cursor: pointer; padding: 12px 14px; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; }
+.course > summary::-webkit-details-marker { display: none; }
+.pct { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+.pct small { display: block; font-size: 12px; font-weight: 600; text-align: right; }
+.spark { grid-column: 1 / -1; }
+.course .body { padding: 0 14px 12px; border-top: 1px solid var(--border); }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th { text-align: left; color: var(--text-2); font-weight: 600; padding: 8px 4px; border-bottom: 1px solid var(--border); }
+td { padding: 7px 4px; border-bottom: 1px solid var(--border); vertical-align: top; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.low td.num:last-child { color: var(--critical); font-weight: 700; }
+
+/* chart */
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart .grid { stroke: var(--border); stroke-width: 1; }
+.chart .ref { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; }
+.chart .axis { fill: var(--muted); font-size: 11px; }
+.chart .ln { fill: none; stroke: var(--line); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart .dot { fill: var(--line); stroke: var(--surface); stroke-width: 2; }
+.chart .cross { stroke: var(--text-2); stroke-width: 1; }
+.tip { position: absolute; pointer-events: none; background: var(--text); color: var(--bg); font-size: 12px; padding: 6px 8px;
+  border-radius: 6px; white-space: nowrap; transform: translate(-50%, -110%); display: none; z-index: 3; }
+
+/* lock */
+.lock { max-width: 360px; margin: 18vh auto 0; padding: 0 16px; text-align: center; }
+.lock input[type=password] { width: 100%; font: inherit; padding: 12px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); margin: 12px 0 8px; }
+.lock button { width: 100%; font: inherit; font-weight: 600; padding: 12px; border-radius: 10px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; }
+.lock label { font-size: 14px; color: var(--text-2); display: flex; gap: 6px; justify-content: center; align-items: center; margin-top: 10px; }
+.err { color: var(--critical); min-height: 1.4em; font-size: 14px; }
+footer { margin-top: 36px; color: var(--muted); font-size: 13px; }
+footer button { font: inherit; font-size: 13px; background: none; border: 0; color: var(--accent); cursor: pointer; padding: 0; }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div id="lock" class="lock">
+  <div style="font-size:48px">📚</div>
+  <h1>Homework HQ</h1>
+  <form id="lockForm" autocomplete="on">
+    <input id="pw" type="password" placeholder="Password" autocomplete="current-password" aria-label="Password" required>
+    <button type="submit" id="unlockBtn">Unlock</button>
+    <label><input type="checkbox" id="remember" checked> Remember on this device</label>
+    <div class="err" id="err" role="alert"></div>
+  </form>
+</div>
+
+<div id="app" class="wrap hidden">
+  <header>
+    <div>
+      <h1>Homework HQ</h1>
+      <div class="sub" id="updated"></div>
+    </div>
+    <div class="sub" id="quarter"></div>
+  </header>
+  <div class="tiles" id="tiles"></div>
+  <nav role="tablist" id="tabs"></nav>
+  <main id="view"></main>
+  <footer>
+    Data from Canvas, refreshed every 30 minutes from 6am to midnight. Paper and in-class work only shows as turned in once it's graded.
+    Percentages are raw Canvas points for this quarter, not official report-card grades.
+    · <button id="lockBtn">Lock</button> · <button id="themeBtn">Theme</button>
+  </footer>
+</div>
+
+<script>
+const ITER_DEFAULT = 600000;
+const LS_PW = "hwhq.pw", LS_TAB = "hwhq.tab", LS_THEME = "hwhq.theme";
+const ls = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} },
+};
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+async function decrypt(blob, password) {
+  const enc = JSON.parse(blob);
+  const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey(
+    { name: "PBKDF2", hash: "SHA-256", salt: b64(enc.salt), iterations: enc.iter || ITER_DEFAULT },
+    base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(enc.iv) }, key, b64(enc.ct));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+
+async function load(password) {
+  const r = await fetch("data.enc?t=" + Date.now(), { cache: "no-store" });
+  if (!r.ok) throw new Error("Couldn't load data (" + r.status + ")");
+  return decrypt(await r.text(), password);
+}
+
+/* ---------- time helpers (all display in Eastern) ---------- */
+const TZ = "America/New_York";
+const dayKey = (d) => new Date(d).toLocaleDateString("en-CA", { timeZone: TZ });
+const todayKey = () => dayKey(Date.now());
+const addDays = (key, n) => { const d = new Date(key + "T12:00:00"); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+const fmtDay = (d) => new Date(d).toLocaleDateString("en-US", { timeZone: TZ, weekday: "short", month: "short", day: "numeric" });
+const fmtTime = (d) => new Date(d).toLocaleTimeString("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit" });
+const fmtDue = (d) => {
+  if (!d) return "No due date";
+  const k = dayKey(d), t = todayKey();
+  const label = k === t ? "Today" : k === addDays(t, 1) ? "Tomorrow" : k === addDays(t, -1) ? "Yesterday" : fmtDay(d);
+  return label + " " + fmtTime(d);
+};
+const daysAgo = (d) => Math.floor((Date.parse(todayKey()) - Date.parse(dayKey(d))) / 864e5);
+const ago = (d) => {
+  const m = Math.round((Date.now() - Date.parse(d)) / 6e4);
+  if (m < 2) return "just now";
+  if (m < 60) return m + " min ago";
+  const h = Math.round(m / 60);
+  return h < 24 ? h + " hr ago" : Math.round(h / 24) + " days ago";
+};
+
+/* ---------- status helpers ---------- */
+function band(p) {
+  if (p == null) return { cls: "", label: "No grades yet" };
+  if (p >= 90) return { cls: "good", label: "On track" };
+  if (p >= 80) return { cls: "good", label: "OK" };
+  if (p >= 70) return { cls: "warning", label: "Needs work" };
+  return { cls: "critical", label: "At risk" };
+}
+const statusChip = {
+  missing: ["critical", "⛔ Missing"], overdue: ["serious", "⚠️ Not submitted"], graded: ["", "✓ Graded"],
+  submitted: ["info", "📤 Turned in"], upcoming: ["", "Upcoming"], past_offline: ["", "📄 Paper (check)"],
+  excused: ["", "Excused"], ungraded: ["", "Not graded"], no_date: ["", "No date"],
+};
+
+function itemCard(i, opts = {}) {
+  const [cCls, cLbl] = statusChip[i.status] || ["", i.status];
+  const cls = i.status === "missing" ? "missing" : i.status === "overdue" ? "overdue" : i.recovery ? "recovery" : i.assessment ? "test" : "";
+  const chips = [`<span class="chip ${cCls}">${cLbl}</span>`];
+  if (i.assessment) chips.push(`<span class="chip info">📝 Test/quiz</span>`);
+  if (i.recovery) chips.push(`<span class="chip good">💪 Win points back</span>`);
+  if (i.offline && ["upcoming"].includes(i.status)) chips.push(`<span class="chip">📄 Hand in on paper/in class</span>`);
+  if (i.late) chips.push(`<span class="chip serious">Late</span>`);
+  if (i.points) chips.push(`<span class="chip">${i.points} pts</span>`);
+  if (i.score != null && i.points) chips.push(`<span class="chip ${i.pct < 70 ? "critical" : ""}">${i.score}/${i.points} · ${Math.round(i.pct)}%</span>`);
+  const course = opts.courseMap?.[i.course_id];
+  const gain = (i.if_done != null && course?.pct != null && i.if_done > course.pct)
+    ? `<div class="gain">+${(i.if_done - course.pct).toFixed(1)}% → ${i.if_done.toFixed(1)}%</div>` : "";
+  const teacherNotes = (i.comments || []).filter((c) => c.from_teacher).slice(-2)
+    .map((c) => `<div class="quote"><b>${esc(c.who)}:</b> “${esc(c.text)}”</div>`).join("");
+  const desc = i.desc && opts.showDesc ? `<details class="desc"><summary>Instructions</summary><p>${esc(i.desc)}</p></details>` : "";
+  const due = i.status === "missing" || i.status === "overdue"
+    ? `Was due ${fmtDue(i.due)}${daysAgo(i.due) > 1 ? ` · ${daysAgo(i.due)} days ago` : ""}` : fmtDue(i.due);
+  return `<div class="card ${cls}">
+    <div class="row"><div><div class="title">${esc(i.name)}</div><div class="meta">${esc(i.course)} · ${due}</div></div>${gain}</div>
+    <div class="chips">${chips.join("")}</div>${teacherNotes}${desc}
+    ${i.url ? `<a class="btn" href="${esc(i.url)}" target="_blank" rel="noopener">Open in Canvas</a>` : ""}
+  </div>`;
+}
+
+/* ---------- chart: single-series line with crosshair tooltip ---------- */
+function lineChart(points, { yMin = 0, yMax = 100, ref = null, fmt = (v) => v, height = 90, labelX = true } = {}) {
+  if (points.length < 2) return "";
+  const W = 600, H = height, P = { l: 30, r: 8, t: 8, b: labelX ? 18 : 6 };
+  const xs = points.map((p) => Date.parse(p.at));
+  const x0 = Math.min(...xs), x1 = Math.max(...xs) || x0 + 1;
+  const X = (t) => P.l + ((t - x0) / (x1 - x0 || 1)) * (W - P.l - P.r);
+  const Y = (v) => P.t + (1 - (v - yMin) / (yMax - yMin)) * (H - P.t - P.b);
+  const d = points.map((p, k) => `${k ? "L" : "M"}${X(xs[k]).toFixed(1)},${Y(p.v).toFixed(1)}`).join("");
+  const ticks = [yMin, (yMin + yMax) / 2, yMax];
+  const id = "c" + Math.random().toString(36).slice(2, 8);
+  chartData[id] = { points, xs, X, Y, W, H, fmt };
+  const last = points[points.length - 1];
+  return `<div class="chart" data-chart="${id}">
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Trend, latest ${esc(fmt(last.v))}">
+      ${ticks.map((t) => `<line class="grid" x1="${P.l}" x2="${W - P.r}" y1="${Y(t)}" y2="${Y(t)}"/><text class="axis" x="${P.l - 4}" y="${Y(t) + 4}" text-anchor="end">${t}</text>`).join("")}
+      ${ref != null ? `<line class="ref" x1="${P.l}" x2="${W - P.r}" y1="${Y(ref)}" y2="${Y(ref)}"/>` : ""}
+      ${labelX ? `<text class="axis" x="${P.l}" y="${H - 4}">${fmtDay(points[0].at)}</text><text class="axis" x="${W - P.r}" y="${H - 4}" text-anchor="end">${fmtDay(last.at)}</text>` : ""}
+      <path class="ln" d="${d}"/>
+      <circle class="dot" cx="${X(xs[xs.length - 1])}" cy="${Y(last.v)}" r="4"/>
+      <line class="cross hidden" y1="${P.t}" y2="${H - P.b}"/><circle class="dot hov hidden" r="4"/>
+    </svg><div class="tip"></div></div>`;
+}
+const chartData = {};
+function wireCharts(root) {
+  root.querySelectorAll("[data-chart]").forEach((el) => {
+    const c = chartData[el.dataset.chart]; if (!c) return;
+    const svg = el.querySelector("svg"), tip = el.querySelector(".tip"), cross = svg.querySelector(".cross"), hov = svg.querySelector(".hov");
+    const move = (ev) => {
+      const r = svg.getBoundingClientRect(), px = ((ev.clientX - r.left) / r.width) * c.W;
+      let k = 0; c.xs.forEach((t, j) => { if (Math.abs(c.X(t) - px) < Math.abs(c.X(c.xs[k]) - px)) k = j; });
+      const p = c.points[k], x = c.X(c.xs[k]), y = c.Y(p.v);
+      cross.setAttribute("x1", x); cross.setAttribute("x2", x); cross.classList.remove("hidden");
+      hov.setAttribute("cx", x); hov.setAttribute("cy", y); hov.classList.remove("hidden");
+      tip.innerHTML = `<b>${esc(c.fmt(p.v))}</b> · ${esc(fmtDay(p.at))}${p.note ? "<br>" + esc(p.note) : ""}`;
+      tip.style.left = (x / c.W) * r.width + "px"; tip.style.top = (y / c.H) * r.height + "px"; tip.style.display = "block";
+    };
+    const leave = () => { tip.style.display = "none"; cross.classList.add("hidden"); hov.classList.add("hidden"); };
+    svg.addEventListener("pointermove", move); svg.addEventListener("pointerdown", move); svg.addEventListener("pointerleave", leave);
+  });
+}
+
+/* ---------- views ---------- */
+let D = null;
+
+function derive() {
+  const now = Date.now(), t = todayKey();
+  const items = D.items;
+  const courseMap = Object.fromEntries(D.courses.map((c) => [c.id, c]));
+  const open = items.filter((i) => i.status === "missing" || i.status === "overdue");
+  open.sort((a, b) => {
+    const ga = (a.if_done ?? 0) - (courseMap[a.course_id]?.pct ?? 0), gb = (b.if_done ?? 0) - (courseMap[b.course_id]?.pct ?? 0);
+    return gb - ga || (b.points || 0) - (a.points || 0) || Date.parse(a.due) - Date.parse(b.due);
+  });
+  const future = items.filter((i) => i.due && Date.parse(i.due) >= now && !["graded", "excused", "submitted"].includes(i.status));
+  const in48 = future.filter((i) => Date.parse(i.due) < now + 48 * 36e5).sort((a, b) => Date.parse(a.due) - Date.parse(b.due));
+  const tests = future.filter((i) => i.assessment && Date.parse(i.due) < now + 14 * 864e5).sort((a, b) => Date.parse(a.due) - Date.parse(b.due));
+  const qEnd = D.quarter ? Date.parse(D.quarter.end) : now + 30 * 864e5;
+  const recovery = items.filter((i) => i.recovery && !["graded", "excused"].includes(i.status) && (!i.due || Date.parse(i.due) >= now - 864e5) && (!i.due || Date.parse(i.due) <= qEnd + 864e5));
+  const graded = items.filter((i) => i.score != null && i.points && i.in_quarter);
+  const low = graded.filter((i) => i.pct < 70);
+  const recent = graded.filter((i) => i.graded_at && Date.now() - Date.parse(i.graded_at) < 7 * 864e5)
+    .sort((a, b) => Date.parse(b.graded_at) - Date.parse(a.graded_at));
+  const paperPast = items.filter((i) => i.status === "past_offline" && daysAgo(i.due) <= 14).sort((a, b) => Date.parse(b.due) - Date.parse(a.due));
+  return { courseMap, open, in48, tests, recovery, low, recent, paperPast, future, t };
+}
+
+function renderHeader(x) {
+  const age = (Date.now() - Date.parse(D.generated_at)) / 36e5;
+  $("#updated").innerHTML = `Updated ${ago(D.generated_at)}` + (age > 3 ? ` · <span class="stale">data may be stale</span>` : "");
+  if (D.quarter) {
+    const left = Math.ceil((Date.parse(D.quarter.end) - Date.now()) / 864e5);
+    $("#quarter").innerHTML = `<b>${esc(D.quarter.title)}</b> ends ${fmtDay(D.quarter.end)} · <b>${left}</b> day${left === 1 ? "" : "s"} left`;
+  }
+  const worst = D.courses.find((c) => c.pct != null);
+  const tiles = [
+    [x.open.length, "missing / not turned in", x.open.length ? "bad" : "ok"],
+    [x.in48.length, "due in next 48 hours", x.in48.length ? "warn" : ""],
+    [x.low.length, "scores under 70% this quarter", x.low.length ? "warn" : "ok"],
+    [worst ? Math.round(worst.pct) + "%" : "—", worst ? "lowest: " + worst.name : "lowest class", worst ? band(worst.pct).cls === "critical" ? "bad" : band(worst.pct).cls === "warning" ? "warn" : "ok" : ""],
+  ];
+  $("#tiles").innerHTML = tiles.map(([n, l, c]) => `<div class="tile ${c}"><div class="n">${n}</div><div class="l">${esc(l)}</div></div>`).join("");
+}
+
+const TABS = [
+  ["today", "Today"], ["week", "Next 2 weeks"], ["grades", "Grades"], ["feedback", "Teacher notes"],
+];
+
+function viewToday(x) {
+  let h = `<h2>🚨 Fix these first</h2><p class="hint">Missing or not turned in, sorted by how much each one would raise the grade. The green number is the class grade if it's turned in for full credit.</p>`;
+  h += x.open.length ? x.open.map((i) => itemCard(i, { courseMap: x.courseMap, showDesc: true })).join("")
+    : `<div class="empty">🎉 Nothing missing. Keep it that way.</div>`;
+  if (x.recovery.length) {
+    h += `<h2>💪 Chances to raise grades</h2><p class="hint">Corrections, late-work folders and redos due before the quarter ends.</p>`;
+    h += x.recovery.map((i) => itemCard(i, { courseMap: x.courseMap, showDesc: true })).join("");
+  }
+  h += `<h2>⏰ Due in the next 48 hours</h2>`;
+  h += x.in48.length ? x.in48.map((i) => itemCard(i, { courseMap: x.courseMap, showDesc: true })).join("")
+    : `<div class="empty">Nothing due in the next 48 hours.</div>`;
+  if (x.tests.length) {
+    h += `<h2>📝 Tests & quizzes coming up</h2><p class="hint">Start studying 3 days before.</p>`;
+    h += x.tests.map((i) => {
+      const start = new Date(Date.parse(i.due) - 3 * 864e5);
+      return itemCard(i, { courseMap: x.courseMap, showDesc: true }).replace('<div class="chips">',
+        `<div class="meta">📖 Start studying: <b>${fmtDay(start)}</b></div><div class="chips">`);
+    }).join("");
+  }
+  if (x.paperPast.length) {
+    h += `<h2>📄 Paper work: was it handed in?</h2><p class="hint">Canvas can't tell if paper work was handed in until it's graded. Go through these together.</p>`;
+    h += `<details class="card"><summary class="title" style="cursor:pointer">${x.paperPast.length} items from the last 2 weeks</summary><table><tbody>${x.paperPast.map((i) => `<tr><td>${esc(i.name)}<div class="meta">${esc(i.course)}</div></td><td class="num">${fmtDay(i.due)}</td></tr>`).join("")}</tbody></table></details>`;
+  }
+  return h;
+}
+
+function viewWeek(x) {
+  const end = addDays(x.t, 14);
+  const list = x.future.filter((i) => dayKey(i.due) <= end).sort((a, b) => Date.parse(a.due) - Date.parse(b.due));
+  if (!list.length) return `<h2>Next 2 weeks</h2><div class="empty">Nothing on the calendar yet. Teachers usually post a few days ahead, so check back.</div>`;
+  let h = `<h2>Next 2 weeks</h2><p class="hint">Teachers often post work only a few days ahead, so check back.</p>`, cur = null;
+  for (const i of list) {
+    const k = dayKey(i.due);
+    if (k !== cur) { cur = k; h += `<div class="day ${k === x.t ? "today" : ""}">${k === x.t ? "Today · " : ""}${fmtDay(i.due)}</div>`; }
+    h += itemCard(i, { courseMap: x.courseMap, showDesc: true });
+  }
+  return h;
+}
+
+function viewGrades(x) {
+  let h = "";
+  const days = Object.entries(D.history || {});
+  h += `<h2>Missing work over time</h2>`;
+  if (days.length >= 2) {
+    const pts = days.map(([d, s]) => ({ at: d + "T12:00:00", v: s.missing }));
+    const max = Math.max(5, ...pts.map((p) => p.v));
+    h += `<div class="card">${lineChart(pts, { yMin: 0, yMax: max, fmt: (v) => v + " missing", height: 110 })}</div>`;
+  } else {
+    h += `<p class="hint">Tracking started ${fmtDay(days[0]?.[0] + "T12:00:00")}. A daily trend shows up here from tomorrow on. The goal is a flat line at zero.</p>`;
+  }
+  if (x.recent.length) {
+    h += `<h2>Graded in the last 7 days</h2><div class="card"><table><tbody>${x.recent.map((i) =>
+      `<tr class="${i.pct < 70 ? "low" : ""}"><td>${esc(i.name)}<div class="meta">${esc(i.course)} · ${fmtDay(i.graded_at)}</div></td><td class="num">${i.score}/${i.points}</td><td class="num">${Math.round(i.pct)}%</td></tr>`).join("")}</tbody></table></div>`;
+  }
+  h += `<h2>Classes, worst first</h2><p class="hint">Raw points on work graded in Canvas this quarter. The line shows how the average moved as each grade came in; the dashed line is 70%. Tap a class for every grade.</p>`;
+  for (const c of D.courses) {
+    const b = band(c.pct);
+    const graded = D.items.filter((i) => i.course_id === c.id && i.in_quarter && i.score != null && i.points)
+      .sort((a, z) => Date.parse(z.graded_at || z.due) - Date.parse(a.graded_at || a.due));
+    const pts = c.trend.map((p) => ({ at: p.at, v: p.pct, note: `${p.name}: ${p.score_pct != null ? Math.round(p.score_pct) + "%" : ""}` }));
+    const nums = c.pct == null ? `<div class="pct">—<small class="meta">no Canvas grades</small></div>`
+      : `<div class="pct">${c.pct.toFixed(1)}%<small><span class="chip ${b.cls}">${b.label}</span></small></div>`;
+    const extras = [c.missing ? `<span class="chip critical">${c.missing} missing</span>` : "", c.low ? `<span class="chip warning">${c.low} under 70%</span>` : ""].join("");
+    h += `<details class="course"><summary>
+      <div><div class="title">${esc(c.name)}</div><div class="meta">${esc(c.teacher)} · ${c.graded} graded</div><div class="chips">${extras}</div></div>${nums}
+      ${pts.length >= 2 ? `<div class="spark">${lineChart(pts, { ref: 70, yMin: Math.min(40, Math.floor(Math.min(...pts.map((p) => p.v)) / 10) * 10), fmt: (v) => v.toFixed(1) + "% avg", height: 70, labelX: false })}</div>` : ""}
+    </summary><div class="body">
+      ${graded.length ? `<table><thead><tr><th>Assignment</th><th style="text-align:right">Score</th><th style="text-align:right">%</th></tr></thead><tbody>${graded.map((i) =>
+        `<tr class="${i.pct < 70 ? "low" : ""}"><td>${i.url ? `<a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.name)}</a>` : esc(i.name)}<div class="meta">${i.status === "missing" ? "⛔ marked missing · " : ""}${i.late ? "late · " : ""}${esc(i.group)}</div></td><td class="num">${i.score}/${i.points}</td><td class="num">${Math.round(i.pct)}%</td></tr>`).join("")}</tbody></table>`
+        : `<p class="hint">This teacher hasn't put grades in Canvas. Check the school portal for this class.</p>`}
+      <a class="btn" href="${esc(c.url)}" target="_blank" rel="noopener">Open class in Canvas</a>
+    </div></details>`;
+  }
+  return h;
+}
+
+function viewFeedback() {
+  let h = `<h2>Teacher notes</h2><p class="hint">Comments teachers left on assignments, newest first. They often say exactly what to fix.</p>`;
+  const fb = D.feedback || [];
+  h += fb.length ? fb.map((f) => `<div class="card ${f.from_teacher ? "" : "test"}">
+      <div class="meta">${esc(f.course)} · ${esc(f.assignment)} · ${fmtDay(f.at)}</div>
+      <div class="quote" style="margin-top:6px"><b>${esc(f.who)}${f.from_teacher ? "" : " (student)"}:</b> “${esc(f.text)}”</div>
+      ${f.url ? `<a class="btn" href="${esc(f.url)}" target="_blank" rel="noopener">Open assignment</a>` : ""}</div>`).join("")
+    : `<div class="empty">No comments yet.</div>`;
+  if ((D.inbox || []).length) {
+    h += `<h2>Canvas messages (last 45 days)</h2>` + D.inbox.map((m) => `<div class="card ${m.unread ? "missing" : ""}">
+      <div class="title">${m.unread ? "🔵 " : ""}${esc(m.subject || "(no subject)")}</div>
+      <div class="meta">${esc((m.with || []).join(", "))} · ${fmtDay(m.at)}</div>
+      ${m.preview ? `<div class="quote">${esc(m.preview)}</div>` : ""}</div>`).join("");
+  }
+  return h;
+}
+
+function render() {
+  const x = derive();
+  renderHeader(x);
+  let tab = ls.get(LS_TAB) || "today";
+  if (!TABS.some(([k]) => k === tab)) tab = "today";
+  $("#tabs").innerHTML = TABS.map(([k, l]) => `<button role="tab" data-tab="${k}" aria-selected="${k === tab}">${l}${k === "today" && x.open.length ? `<span class="count">${x.open.length}</span>` : ""}</button>`).join("");
+  $("#tabs").querySelectorAll("button").forEach((b) => b.onclick = () => { ls.set(LS_TAB, b.dataset.tab); render(); window.scrollTo({ top: 0 }); });
+  for (const k in chartData) delete chartData[k];
+  $("#view").innerHTML = { today: viewToday, week: viewWeek, grades: viewGrades, feedback: viewFeedback }[tab](x);
+  wireCharts($("#view"));
+}
+
+/* ---------- boot ---------- */
+let PW = null;
+async function unlock(pw, remember) {
+  $("#unlockBtn").textContent = "Unlocking…"; $("#err").textContent = "";
+  try {
+    D = await load(pw);
+    PW = pw;
+    if (remember) ls.set(LS_PW, pw);
+    $("#lock").classList.add("hidden"); $("#app").classList.remove("hidden");
+    render();
+  } catch (e) {
+    $("#err").textContent = e.name === "OperationError" ? "Wrong password." : e.message;
+    ls.del(LS_PW);
+  } finally { $("#unlockBtn").textContent = "Unlock"; }
+}
+$("#lockForm").onsubmit = (e) => { e.preventDefault(); unlock($("#pw").value, $("#remember").checked); };
+$("#lockBtn").onclick = () => { ls.del(LS_PW); location.reload(); };
+const applyTheme = (t) => { if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; };
+applyTheme(ls.get(LS_THEME));
+$("#themeBtn").onclick = () => {
+  const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const next = cur === "dark" ? "light" : "dark"; ls.set(LS_THEME, next); applyTheme(next);
+};
+// Pull fresh data when the tab comes back into view, at most every 5 minutes.
+let lastLoad = Date.now();
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState === "visible" && PW && Date.now() - lastLoad > 5 * 6e4) {
+    lastLoad = Date.now();
+    try { D = await load(PW); render(); } catch {}
+  }
+});
+setInterval(() => { if (D) renderHeader(derive()); }, 6e4);
+const saved = ls.get(LS_PW);
+if (saved) unlock(saved, true);
+</script>
+</body>
+</html>
