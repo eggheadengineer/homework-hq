@@ -358,7 +358,7 @@ function viewToday(x) {
     h += x.tests.map((i) => {
       const start = new Date(Date.parse(i.due) - 3 * 864e5);
       return itemCard(i, { courseMap: x.courseMap, showDesc: true }).replace('<div class="chips">',
-        `<div class="meta">📖 Start studying: <b>${fmtDay(start)}</b></div><div class="chips">`);
+        `<div class="meta">📖 Start studying: <b>${start <= Date.now() ? "now" : fmtDay(start)}</b></div><div class="chips">`);
     }).join("");
   }
   if (x.paperPast.length) {
