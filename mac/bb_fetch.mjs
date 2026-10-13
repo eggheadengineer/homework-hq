@@ -160,7 +160,7 @@ async function collect(page) {
   for (const g of graded) {
     const rows = await apiGet(page, `/api/gradebook/AssignmentPerformanceStudent?sectionId=${g.sectionid}&markingPeriodId=${g.markingperiodid}&studentId=${SID}`);
     const categories = {};
-    for (const r of rows) categories[r.AssignmentType] ??= { name: r.AssignmentType, avg: parseFloat(r.Percentage) || null, n: 0 };
+    for (const r of rows) categories[r.AssignmentType] ??= { name: r.AssignmentType, avg: parseFloat(r.Percentage) || null, weight: r.Weight ?? null, n: 0 };
     rows.forEach((r) => categories[r.AssignmentType].n++);
     sections.push({
       id: g.sectionid,
