@@ -239,12 +239,92 @@ def build(cv: Canvas, now: datetime):
     }
 
 
+# ---------------------------------------------------------------- Blackbaud (official gradebook)
+BLACKBAUD = HERE / "blackbaud.enc"
+
+
+def norm(s):
+    return re.sub(r"[^a-z0-9 ]", "", (s or "").lower().replace("&", "and")).strip()
+
+
+def same_course(a, b):
+    a, b = norm(a), norm(b)
+    return bool(a and b) and (a == b or a.startswith(b) or b.startswith(a))
+
+
+def same_assignment(a, b):
+    a, b = norm(a), norm(b)
+    if not a or not b:
+        return False
+    if a == b or (min(len(a), len(b)) >= 8 and (a in b or b in a)):
+        return True
+    ta, tb = set(a.split()), set(b.split())
+    return len(ta & tb) / len(ta | tb) >= 0.6
+
+
+def section_grade(section, override=None):
+    """Blackbaud's grade math: category-weighted if the class has weights, else total points.
+    `override` = (assignment_id, points) to answer "what if this were turned in?"."""
+    cats = {}
+    for a in section["assignments"]:
+        pts = override[1] if override and a["id"] == override[0] else a["points"]
+        if not a["counts"] or a["exempt"] or pts is None:
+            continue
+        c = cats.setdefault(a["type"], [0.0, 0.0])
+        c[0] += pts
+        c[1] += 0 if a["extra"] else a["max"]
+    weights = {c["name"]: c.get("weight") for c in section["categories"]}
+    if any(w is not None for w in weights.values()):
+        used = [(weights.get(k) or 0, e / m) for k, (e, m) in cats.items() if m and (weights.get(k) or 0) > 0]
+        total_w = sum(w for w, _ in used)
+        return round(100 * sum(w * r for w, r in used) / total_w, 2) if total_w else None
+    e, m = sum(v[0] for v in cats.values()), sum(v[1] for v in cats.values())
+    return round(100 * e / m, 2) if m else None
+
+
+def merge_official(data, bb):
+    """Attach Blackbaud grades to Canvas courses and build one missing-work list from both."""
+    data["official"] = {k: bb.get(k) for k in ("fetched_at", "quarter", "absences", "conduct")}
+    sections = bb.get("sections") or []
+    for c in data["courses"]:
+        sec = next((s for s in sections if same_course(c["name"], s["name"])), None)
+        c["official"] = sec
+    data["unmatched_sections"] = [s for s in sections if not any(c.get("official") is s for c in data["courses"])]
+
+    canvas_open = [i for i in data["items"] if i["status"] in ("missing", "overdue")]
+    merged = []
+    for i in canvas_open:
+        course = next((c for c in data["courses"] if c["id"] == i["course_id"]), None)
+        merged.append({**i, "source": "canvas", "if_done": None if course and course.get("official") else i.get("if_done")})
+    for s in sections:
+        for a in s["assignments"]:
+            if not a["missing"] or a["exempt"]:
+                continue
+            match = next((m for m in merged if same_course(m["course"], s["name"]) and same_assignment(m["name"], a["name"])), None)
+            if_done = section_grade(s, (a["id"], a["max"])) if a.get("max") and a["counts"] else None
+            if match:
+                match["source"] = "both"
+                match["if_done"] = if_done if if_done is not None else match.get("if_done")
+                match["bb_comment"] = a["comment"]
+            else:
+                course = next((c for c in data["courses"] if c.get("official") is s), None)
+                merged.append({
+                    "id": f"bb{a['id']}", "course": course["name"] if course else s["name"],
+                    "course_id": course["id"] if course else None, "name": a["name"],
+                    "due": a["due"] + ":00" if a["due"] else None, "points": a["max"], "score": a["points"], "pct": a["pct"],
+                    "status": "missing", "source": "gradebook", "if_done": if_done, "bb_comment": a["comment"],
+                    "url": course["url"] if course else None, "comments": [], "desc": "", "offline": True,
+                    "assessment": bool(ASSESSMENT.search(f"{a['name']} {a['type']}")), "recovery": False,
+                })
+    data["missing"] = merged
+
+
 # ---------------------------------------------------------------- history + alerts
 def snapshot(data):
-    open_items = [i for i in data["items"] if i["status"] in ("missing", "overdue")]
     return {
-        "missing": len(open_items),
+        "missing": len(data["missing"]),
         "courses": {str(c["id"]): c["pct"] for c in data["courses"] if c["pct"] is not None},
+        "official": {c["name"]: c["official"]["grade"] for c in data["courses"] if c.get("official") and c["official"]["grade"] is not None},
     }
 
 
@@ -262,6 +342,27 @@ def alerts(prev_state, data):
             mark = "🔻" if (i["pct"] or 100) < LOW_SCORE else "✅"
             msgs.append(f"{mark} {i['course']}: \"{i['name']}\" graded {i['score']:g}/{i['points'] or 0:g}"
                         + (f" ({i['pct']:.0f}%)" if i["pct"] is not None else ""))
+    for c in data["courses"]:
+        sec = c.get("official")
+        if not sec:
+            continue
+        key = f"sec:{sec['id']}"
+        state[key] = sec["grade"]
+        old = prev_state.get(key)
+        if old is not None and sec["grade"] is not None and abs(sec["grade"] - old) >= 1.0:
+            arrow = "📈" if sec["grade"] > old else "📉"
+            msgs.append(f"{arrow} {c['name']} official grade {old:.1f}% → {sec['grade']:.1f}%")
+        for a in sec["assignments"]:
+            key = f"bb:{a['id']}"
+            state[key] = [a["missing"], a["points"]]
+            old = prev_state.get(key)
+            if old is None:
+                continue
+            if a["missing"] and not old[0]:
+                msgs.append(f"⚠️ {c['name']}: \"{a['name']}\" marked missing in the gradebook")
+            elif a["points"] is not None and old[1] != a["points"] and not a["missing"]:
+                mark = "🔻" if (a["pct"] or 100) < LOW_SCORE else "✅"
+                msgs.append(f"{mark} {c['name']}: \"{a['name']}\" {a['points']:g}/{a['max']:g} ({a['pct']:.0f}%)")
     return msgs, state
 
 
@@ -270,6 +371,7 @@ def main():
     password = os.environ["PAGE_PASSWORD"]
     now = datetime.now(timezone.utc)
     data = build(Canvas(os.environ["CANVAS_BASE_URL"], os.environ["CANVAS_TOKEN"]), now)
+    merge_official(data, decrypt(BLACKBAUD.read_text(), password) if BLACKBAUD.exists() else {})
 
     history = decrypt(HISTORY.read_text(), password) if HISTORY.exists() else {"days": {}, "state": None}
     msgs, state = alerts(history.get("state") or {}, data)

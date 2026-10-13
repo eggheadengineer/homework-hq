@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ["site/index.html", "build.py", ".github/workflows/update.yml"]
+    paths: ["site/index.html", "build.py", "blackbaud.enc", ".github/workflows/update.yml"]
 
 permissions:
   contents: write

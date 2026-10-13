@@ -159,8 +159,8 @@ footer button { font: inherit; font-size: 13px; background: none; border: 0; col
   <nav role="tablist" id="tabs"></nav>
   <main id="view"></main>
   <footer>
-    Data from Canvas, refreshed every 30 minutes from 6am to midnight. Paper and in-class work only shows as turned in once it's graded.
-    Percentages are raw Canvas points for this quarter, not official report-card grades.
+    Assignments and due dates come from Canvas; grades, missing flags and attendance come from the school gradebook (Blackbaud).
+    Both refresh every 30 minutes from 6am to midnight. Paper and in-class work shows as turned in only once it's graded.
     · <button id="lockBtn">Lock</button> · <button id="themeBtn">Theme</button>
   </footer>
 </div>
@@ -223,6 +223,28 @@ function band(p) {
   if (p >= 70) return { cls: "warning", label: "Needs work" };
   return { cls: "critical", label: "At risk" };
 }
+const grade = (c) => c?.official?.grade ?? c?.pct ?? null;
+function sectionGrade(sec, rows) {
+  const cats = {};
+  for (const a of rows) {
+    if (!a.counts || a.exempt || a.points == null) continue;
+    const c = (cats[a.type] ??= [0, 0]); c[0] += a.points; c[1] += a.extra ? 0 : a.max;
+  }
+  const w = Object.fromEntries(sec.categories.map((c) => [c.name, c.weight]));
+  if (sec.categories.some((c) => c.weight != null)) {
+    const used = Object.entries(cats).filter(([k, [, m]]) => m && (w[k] || 0) > 0);
+    const tw = used.reduce((s, [k]) => s + w[k], 0);
+    return tw ? 100 * used.reduce((s, [k, [e, m]]) => s + w[k] * e / m, 0) / tw : null;
+  }
+  const e = Object.values(cats).reduce((s, v) => s + v[0], 0), m = Object.values(cats).reduce((s, v) => s + v[1], 0);
+  return m ? 100 * e / m : null;
+}
+function officialTrend(sec) {
+  const rows = sec.assignments.filter((a) => a.points != null && a.due && a.counts && !a.exempt).sort((a, b) => a.due.localeCompare(b.due));
+  const out = [];
+  rows.forEach((a, k) => { const g = sectionGrade(sec, rows.slice(0, k + 1)); if (g != null) out.push({ at: a.due + ":00", v: g, note: `${a.name}: ${a.pct != null ? Math.round(a.pct) + "%" : ""}` }); });
+  return out;
+}
 const statusChip = {
   missing: ["critical", "⛔ Missing"], overdue: ["serious", "⚠️ Not submitted"], graded: ["", "✓ Graded"],
   submitted: ["info", "📤 Turned in"], upcoming: ["", "Upcoming"], past_offline: ["", "📄 Paper (check)"],
@@ -238,19 +260,23 @@ function itemCard(i, opts = {}) {
   if (i.offline && ["upcoming"].includes(i.status)) chips.push(`<span class="chip">📄 Hand in on paper/in class</span>`);
   if (i.late) chips.push(`<span class="chip serious">Late</span>`);
   if (i.points) chips.push(`<span class="chip">${i.points} pts</span>`);
-  if (i.score != null && i.points) chips.push(`<span class="chip ${i.pct < 70 ? "critical" : ""}">${i.score}/${i.points} · ${Math.round(i.pct)}%</span>`);
+  if (i.score != null && i.points && i.pct != null) chips.push(`<span class="chip ${i.pct < 70 ? "critical" : ""}">${i.score}/${i.points} · ${Math.round(i.pct)}%</span>`);
   const course = opts.courseMap?.[i.course_id];
-  const gain = (i.if_done != null && course?.pct != null && i.if_done > course.pct)
-    ? `<div class="gain">+${(i.if_done - course.pct).toFixed(1)}% → ${i.if_done.toFixed(1)}%</div>` : "";
+  const g = grade(course);
+  const gain = (i.if_done != null && g != null && i.if_done - g >= 0.05)
+    ? `<div class="gain">+${(i.if_done - g).toFixed(1)}% → ${i.if_done.toFixed(1)}%</div>` : "";
+  if (i.if_done != null && g != null && Math.abs(i.if_done - g) < 0.05) chips.push(`<span class="chip">Doesn't change the grade</span>`);
+  if (i.source === "gradebook") chips.push(`<span class="chip info">📒 Teacher gradebook</span>`);
   const teacherNotes = (i.comments || []).filter((c) => c.from_teacher).slice(-2)
-    .map((c) => `<div class="quote"><b>${esc(c.who)}:</b> “${esc(c.text)}”</div>`).join("");
+    .map((c) => `<div class="quote"><b>${esc(c.who)}:</b> “${esc(c.text)}”</div>`).join("")
+    + (i.bb_comment ? `<div class="quote"><b>Gradebook note:</b> “${esc(i.bb_comment)}”</div>` : "");
   const desc = i.desc && opts.showDesc ? `<details class="desc"><summary>Instructions</summary><p>${esc(i.desc)}</p></details>` : "";
   const due = i.status === "missing" || i.status === "overdue"
     ? `Was due ${fmtDue(i.due)}${daysAgo(i.due) > 1 ? ` · ${daysAgo(i.due)} days ago` : ""}` : fmtDue(i.due);
   return `<div class="card ${cls}">
     <div class="row"><div><div class="title">${esc(i.name)}</div><div class="meta">${esc(i.course)} · ${due}</div></div>${gain}</div>
     <div class="chips">${chips.join("")}</div>${teacherNotes}${desc}
-    ${i.url ? `<a class="btn" href="${esc(i.url)}" target="_blank" rel="noopener">Open in Canvas</a>` : ""}
+    ${i.url ? `<a class="btn" href="${esc(i.url)}" target="_blank" rel="noopener">${i.source === "gradebook" ? "Open class in Canvas" : "Open in Canvas"}</a>` : ""}
   </div>`;
 }
 
@@ -303,18 +329,19 @@ function derive() {
   const now = Date.now(), t = todayKey();
   const items = D.items;
   const courseMap = Object.fromEntries(D.courses.map((c) => [c.id, c]));
-  const open = items.filter((i) => i.status === "missing" || i.status === "overdue");
-  open.sort((a, b) => {
-    const ga = (a.if_done ?? 0) - (courseMap[a.course_id]?.pct ?? 0), gb = (b.if_done ?? 0) - (courseMap[b.course_id]?.pct ?? 0);
-    return gb - ga || (b.points || 0) - (a.points || 0) || Date.parse(a.due) - Date.parse(b.due);
-  });
+  const open = (D.missing || items.filter((i) => i.status === "missing" || i.status === "overdue")).slice();
+  const gainOf = (i) => i.if_done != null && grade(courseMap[i.course_id]) != null ? i.if_done - grade(courseMap[i.course_id]) : -1;
+  open.sort((a, b) => gainOf(b) - gainOf(a) || (b.points || 0) - (a.points || 0) || Date.parse(a.due) - Date.parse(b.due));
   const future = items.filter((i) => i.due && Date.parse(i.due) >= now && !["graded", "excused", "submitted"].includes(i.status));
   const in48 = future.filter((i) => Date.parse(i.due) < now + 48 * 36e5).sort((a, b) => Date.parse(a.due) - Date.parse(b.due));
   const tests = future.filter((i) => i.assessment && Date.parse(i.due) < now + 14 * 864e5).sort((a, b) => Date.parse(a.due) - Date.parse(b.due));
   const qEnd = D.quarter ? Date.parse(D.quarter.end) : now + 30 * 864e5;
   const recovery = items.filter((i) => i.recovery && !["graded", "excused"].includes(i.status) && (!i.due || Date.parse(i.due) >= now - 864e5) && (!i.due || Date.parse(i.due) <= qEnd + 864e5));
   const graded = items.filter((i) => i.score != null && i.points && i.in_quarter);
-  const low = graded.filter((i) => i.pct < 70);
+  const low = [
+    ...D.courses.filter((c) => c.official).flatMap((c) => c.official.assignments.filter((a) => a.points != null && a.counts && !a.exempt && a.pct < 70)),
+    ...graded.filter((i) => !courseMap[i.course_id]?.official && i.pct < 70),
+  ];
   const recent = graded.filter((i) => i.graded_at && Date.now() - Date.parse(i.graded_at) < 7 * 864e5)
     .sort((a, b) => Date.parse(b.graded_at) - Date.parse(a.graded_at));
   const paperPast = items.filter((i) => i.status === "past_offline" && daysAgo(i.due) <= 14).sort((a, b) => Date.parse(b.due) - Date.parse(a.due));
@@ -323,17 +350,19 @@ function derive() {
 
 function renderHeader(x) {
   const age = (Date.now() - Date.parse(D.generated_at)) / 36e5;
-  $("#updated").innerHTML = `Updated ${ago(D.generated_at)}` + (age > 3 ? ` · <span class="stale">data may be stale</span>` : "");
+  const bbAge = D.official?.fetched_at ? (Date.now() - Date.parse(D.official.fetched_at)) / 36e5 : null;
+  $("#updated").innerHTML = `Canvas updated ${ago(D.generated_at)}` + (age > 3 ? ` · <span class="stale">may be stale</span>` : "")
+    + (bbAge != null ? ` · grades checked ${ago(D.official.fetched_at)}` + (bbAge > 12 ? ` · <span class="stale">gradebook sync stopped</span>` : "") : "");
   if (D.quarter) {
     const left = Math.ceil((Date.parse(D.quarter.end) - Date.now()) / 864e5);
     $("#quarter").innerHTML = `<b>${esc(D.quarter.title)}</b> ends ${fmtDay(D.quarter.end)} · <b>${left}</b> day${left === 1 ? "" : "s"} left`;
   }
-  const worst = D.courses.find((c) => c.pct != null);
+  const worst = D.courses.filter((c) => grade(c) != null).sort((a, b) => grade(a) - grade(b))[0];
   const tiles = [
     [x.open.length, "missing / not turned in", x.open.length ? "bad" : "ok"],
     [x.in48.length, "due in next 48 hours", x.in48.length ? "warn" : ""],
     [x.low.length, "scores under 70% this quarter", x.low.length ? "warn" : "ok"],
-    [worst ? Math.round(worst.pct) + "%" : "—", worst ? "lowest: " + worst.name : "lowest class", worst ? band(worst.pct).cls === "critical" ? "bad" : band(worst.pct).cls === "warning" ? "warn" : "ok" : ""],
+    [worst ? Math.round(grade(worst)) + "%" : "—", worst ? "lowest: " + worst.name : "lowest class", worst ? band(grade(worst)).cls === "critical" ? "bad" : band(grade(worst)).cls === "warning" ? "warn" : "ok" : ""],
   ];
   $("#tiles").innerHTML = tiles.map(([n, l, c]) => `<div class="tile ${c}"><div class="n">${n}</div><div class="l">${esc(l)}</div></div>`).join("");
 }
@@ -343,7 +372,7 @@ const TABS = [
 ];
 
 function viewToday(x) {
-  let h = `<h2>🚨 Fix these first</h2><p class="hint">Missing or not turned in, sorted by how much each one would raise the grade. The green number is the class grade if it's turned in for full credit.</p>`;
+  let h = `<h2>🚨 Fix these first</h2><p class="hint">Missing work from Canvas and the teachers' gradebooks, biggest grade boost first. The green number is the real class grade if it's turned in for full credit. Ask the teacher about late credit.</p>`;
   h += x.open.length ? x.open.map((i) => itemCard(i, { courseMap: x.courseMap, showDesc: true })).join("")
     : `<div class="empty">🎉 Nothing missing. Keep it that way.</div>`;
   if (x.recovery.length) {
@@ -396,24 +425,52 @@ function viewGrades(x) {
     h += `<h2>Graded in the last 7 days</h2><div class="card"><table><tbody>${x.recent.map((i) =>
       `<tr class="${i.pct < 70 ? "low" : ""}"><td>${esc(i.name)}<div class="meta">${esc(i.course)} · ${fmtDay(i.graded_at)}</div></td><td class="num">${i.score}/${i.points}</td><td class="num">${Math.round(i.pct)}%</td></tr>`).join("")}</tbody></table></div>`;
   }
-  h += `<h2>Classes, worst first</h2><p class="hint">Raw points on work graded in Canvas this quarter. The line shows how the average moved as each grade came in; the dashed line is 70%. Tap a class for every grade.</p>`;
-  for (const c of D.courses) {
-    const b = band(c.pct);
-    const graded = D.items.filter((i) => i.course_id === c.id && i.in_quarter && i.score != null && i.points)
-      .sort((a, z) => Date.parse(z.graded_at || z.due) - Date.parse(a.graded_at || a.due));
-    const pts = c.trend.map((p) => ({ at: p.at, v: p.pct, note: `${p.name}: ${p.score_pct != null ? Math.round(p.score_pct) + "%" : ""}` }));
-    const nums = c.pct == null ? `<div class="pct">—<small class="meta">no Canvas grades</small></div>`
-      : `<div class="pct">${c.pct.toFixed(1)}%<small><span class="chip ${b.cls}">${b.label}</span></small></div>`;
-    const extras = [c.missing ? `<span class="chip critical">${c.missing} missing</span>` : "", c.low ? `<span class="chip warning">${c.low} under 70%</span>` : ""].join("");
+  h += `<h2>Classes, worst first</h2><p class="hint">Official grades from the school gradebook. The line shows how the grade moved as each score came in; the dashed line is 70%. Tap a class for categories and every score.</p>`;
+  const courses = D.courses.slice().sort((a, b) => (grade(a) ?? 999) - (grade(b) ?? 999));
+  for (const c of courses) {
+    const sec = c.official, g = grade(c), b = band(g);
+    const missingN = (x.open || []).filter((i) => i.course_id === c.id).length;
+    const lowN = sec ? sec.assignments.filter((a) => a.points != null && a.counts && !a.exempt && a.pct < 70).length : c.low;
+    const pts = sec ? officialTrend(sec) : c.trend.map((p) => ({ at: p.at, v: p.pct, note: `${p.name}: ${p.score_pct != null ? Math.round(p.score_pct) + "%" : ""}` }));
+    const nums = g == null ? `<div class="pct">—<small class="meta">no grades yet</small></div>`
+      : `<div class="pct">${g.toFixed(1)}%<small><span class="chip ${b.cls}">${b.label}</span></small></div>`;
+    const extras = [missingN ? `<span class="chip critical">${missingN} missing</span>` : "", lowN ? `<span class="chip warning">${lowN} under 70%</span>` : "",
+      sec ? "" : `<span class="chip">Canvas points only</span>`].join("");
+    const teacher = sec?.teacher || c.teacher;
+    let body = "";
+    if (sec) {
+      const weighted = sec.categories.some((k) => k.weight != null);
+      body += `<h3 style="font-size:15px;margin:12px 0 4px">Where the points are going</h3><table><thead><tr><th>Category</th>${weighted ? `<th style="text-align:right">Counts</th>` : ""}<th style="text-align:right">Average</th></tr></thead><tbody>`
+        + sec.categories.map((k) => `<tr class="${k.avg != null && k.avg < 70 && (k.weight ?? 1) > 0 ? "low" : ""}"><td>${esc(k.name)} <span class="meta">(${k.n})</span></td>${weighted ? `<td class="num">${k.weight ?? 0}%</td>` : ""}<td class="num">${k.avg != null ? k.avg.toFixed(1) + "%" : "—"}</td></tr>`).join("")
+        + `</tbody></table>`;
+      const rows = sec.assignments.slice().sort((a, z) => (z.due || "").localeCompare(a.due || ""));
+      body += `<h3 style="font-size:15px;margin:16px 0 4px">Every score</h3><table><thead><tr><th>Assignment</th><th style="text-align:right">Score</th><th style="text-align:right">%</th></tr></thead><tbody>`
+        + rows.map((a) => {
+          const flags = [a.missing ? "⛔ missing" : "", a.late ? "late" : "", a.exempt ? "exempt" : "", a.incomplete ? "incomplete" : "", a.extra ? "extra credit" : "", !a.counts ? "doesn't count" : ""].filter(Boolean).join(" · ");
+          return `<tr class="${a.points != null && a.pct < 70 && !a.exempt ? "low" : ""}"><td>${esc(a.name)}<div class="meta">${esc(a.type)}${a.due ? " · " + fmtDay(a.due + ":00") : ""}${flags ? " · " + flags : ""}</div>${a.comment ? `<div class="quote">${esc(a.comment)}</div>` : ""}</td><td class="num">${a.points != null ? `${a.points}/${a.max}` : "—"}</td><td class="num">${a.points != null && a.pct != null ? Math.round(a.pct) + "%" : "—"}</td></tr>`;
+        }).join("") + `</tbody></table>`;
+    } else {
+      const graded = D.items.filter((i) => i.course_id === c.id && i.in_quarter && i.score != null && i.points)
+        .sort((a, z) => Date.parse(z.graded_at || z.due) - Date.parse(a.graded_at || a.due));
+      body += graded.length ? `<table><tbody>${graded.map((i) => `<tr class="${i.pct < 70 ? "low" : ""}"><td>${esc(i.name)}</td><td class="num">${i.score}/${i.points}</td><td class="num">${Math.round(i.pct)}%</td></tr>`).join("")}</tbody></table>`
+        : `<p class="hint">No grades for this class yet.</p>`;
+    }
     h += `<details class="course"><summary>
-      <div><div class="title">${esc(c.name)}</div><div class="meta">${esc(c.teacher)} · ${c.graded} graded</div><div class="chips">${extras}</div></div>${nums}
-      ${pts.length >= 2 ? `<div class="spark">${lineChart(pts, { ref: 70, yMin: Math.min(40, Math.floor(Math.min(...pts.map((p) => p.v)) / 10) * 10), fmt: (v) => v.toFixed(1) + "% avg", height: 70, labelX: false })}</div>` : ""}
-    </summary><div class="body">
-      ${graded.length ? `<table><thead><tr><th>Assignment</th><th style="text-align:right">Score</th><th style="text-align:right">%</th></tr></thead><tbody>${graded.map((i) =>
-        `<tr class="${i.pct < 70 ? "low" : ""}"><td>${i.url ? `<a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.name)}</a>` : esc(i.name)}<div class="meta">${i.status === "missing" ? "⛔ marked missing · " : ""}${i.late ? "late · " : ""}${esc(i.group)}</div></td><td class="num">${i.score}/${i.points}</td><td class="num">${Math.round(i.pct)}%</td></tr>`).join("")}</tbody></table>`
-        : `<p class="hint">This teacher hasn't put grades in Canvas. Check the school portal for this class.</p>`}
+      <div><div class="title">${esc(c.name)}</div><div class="meta">${esc(teacher)}${sec?.period ? " · " + esc(sec.period) : ""}</div><div class="chips">${extras}</div></div>${nums}
+      ${pts.length >= 2 ? `<div class="spark">${lineChart(pts, { ref: 70, yMin: Math.min(40, Math.floor(Math.min(...pts.map((p) => p.v)) / 10) * 10), fmt: (v) => v.toFixed(1) + "%", height: 70, labelX: false })}</div>` : ""}
+    </summary><div class="body">${body}
       <a class="btn" href="${esc(c.url)}" target="_blank" rel="noopener">Open class in Canvas</a>
+      ${sec?.email ? ` <a class="btn" href="mailto:${esc(sec.email)}">Email ${esc(sec.teacher.split(" ").slice(-1)[0])}</a>` : ""}
     </div></details>`;
+  }
+  const ab = D.official?.absences || [];
+  if (D.official) {
+    const days = {};
+    for (const a of ab) { const d = (a.at || "").slice(0, 10); (days[d] ??= { reasons: new Set(), n: 0 }).n++; if (a.comment || a.type) days[d].reasons.add(a.comment || a.type); }
+    const list = Object.entries(days).sort((a, b) => b[0].localeCompare(a[0]));
+    h += `<h2>Attendance & conduct</h2><div class="card"><div class="row"><div><div class="title">${list.length} day${list.length === 1 ? "" : "s"} with absences</div><div class="meta">${ab.length} class periods missed this school year · ${D.official.conduct?.infractions ?? 0} conduct infractions</div></div></div>`
+      + (list.length ? `<table style="margin-top:8px"><tbody>${list.map(([d, v]) => `<tr><td>${fmtDay(d + "T12:00:00")}<div class="meta">${esc([...v.reasons].join("; "))}</div></td><td class="num">${v.n} period${v.n === 1 ? "" : "s"}</td></tr>`).join("")}</tbody></table>` : "")
+      + `<p class="hint" style="margin-bottom:0">Missed class days are when work slips. Check the Fix list after each one.</p></div>`;
   }
   return h;
 }
