@@ -217,7 +217,7 @@ async function publish(data) {
   const hash = createHash("sha256").update(JSON.stringify(data)).digest("hex");
   const stale = Date.now() - (state.lastPush || 0) > HEARTBEAT_HOURS * 3600e3;
   const changed = hash !== state.lastHash;
-  if (!changed && !stale) { log("no change"); return; }
+  if (!changed && !stale) { log("no change"); return false; }
   git("pull", "-q", "--rebase");
   writeFileSync(join(REPO, "blackbaud.enc"), await encrypt({ fetched_at: new Date().toISOString(), ...data }, env.PAGE_PASSWORD));
   git("add", "blackbaud.enc");
@@ -225,6 +225,15 @@ async function publish(data) {
   git("push", "-q");
   Object.assign(state, { lastHash: hash, lastPush: Date.now() }); saveState();
   log(changed ? "pushed update" : "pushed heartbeat");
+  return true;
+}
+
+// GitHub's cron drops runs, so the Mac kicks the site rebuild itself (also refreshes Canvas).
+function dispatch(checkedAt) {
+  const args = ["workflow", "run", "update.yml", "-R", env.GH_REPO || "eggheadengineer/homework-hq"];
+  if (checkedAt) args.push("-f", `bb_checked=${checkedAt}`);
+  const r = spawnSync("gh", args, { encoding: "utf8" });
+  log(r.status === 0 ? "dispatched site rebuild" : `dispatch failed: ${(r.stderr || "").trim().slice(0, 200)}`);
 }
 
 async function main() {
@@ -238,12 +247,14 @@ async function main() {
       await notify("Homework HQ: Blackbaud sign-in needed",
         "Blackbaud logged out and Google wants a real sign-in. On the MacBook, open the Homework HQ Chrome window and sign in with Google.", "loginAlert");
       process.exitCode = 2;
+      dispatch(null); // still refresh Canvas
       return;
     }
     state.loginAlert = 0;
     const data = await collect(page);
     log(`sections=${data.sections.length} assignments=${data.sections.reduce((n, s) => n + s.assignments.length, 0)} absences=${data.absences.length}`);
-    await publish(data);
+    const checkedAt = new Date().toISOString();
+    if (!(await publish(data))) dispatch(checkedAt); // a push already triggers a rebuild
   } finally { page.close(); }
 }
 

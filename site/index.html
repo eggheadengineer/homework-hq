@@ -350,9 +350,10 @@ function derive() {
 
 function renderHeader(x) {
   const age = (Date.now() - Date.parse(D.generated_at)) / 36e5;
-  const bbAge = D.official?.fetched_at ? (Date.now() - Date.parse(D.official.fetched_at)) / 36e5 : null;
+  const bbAt = D.official?.checked_at || D.official?.fetched_at;
+  const bbAge = bbAt ? (Date.now() - Date.parse(bbAt)) / 36e5 : null;
   $("#updated").innerHTML = `Canvas updated ${ago(D.generated_at)}` + (age > 3 ? ` · <span class="stale">may be stale</span>` : "")
-    + (bbAge != null ? ` · grades checked ${ago(D.official.fetched_at)}` + (bbAge > 12 ? ` · <span class="stale">gradebook sync stopped</span>` : "") : "");
+    + (bbAge != null ? ` · grades checked ${ago(bbAt)}` + (bbAge > 12 ? ` · <span class="stale">gradebook sync stopped</span>` : "") : "");
   if (D.quarter) {
     const left = Math.ceil((Date.parse(D.quarter.end) - Date.now()) / 864e5);
     $("#quarter").innerHTML = `<b>${esc(D.quarter.title)}</b> ends ${fmtDay(D.quarter.end)} · <b>${left}</b> day${left === 1 ? "" : "s"} left`;

@@ -2,10 +2,16 @@ name: update
 
 on:
   schedule:
+    # Backup only: GitHub drops many scheduled runs. The Mac fetcher dispatches this every 30 min.
     # Every 30 min, 6:00am–11:30pm US Eastern (EDT = UTC-4; an hour earlier in winter).
     - cron: "*/30 10-23 * * *"
     - cron: "*/30 0-3 * * *"
   workflow_dispatch:
+    inputs:
+      bb_checked:
+        description: "When the Mac last checked Blackbaud (ISO time)"
+        required: false
+        default: ""
   push:
     branches: [main]
     paths: ["site/index.html", "build.py", "blackbaud.enc", ".github/workflows/update.yml"]
@@ -42,6 +48,7 @@ jobs:
           CANVAS_TOKEN: ${{ secrets.CANVAS_TOKEN }}
           PAGE_PASSWORD: ${{ secrets.PAGE_PASSWORD }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          BB_CHECKED: ${{ inputs.bb_checked }}
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
         run: python build.py
 

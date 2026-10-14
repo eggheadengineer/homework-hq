@@ -285,6 +285,8 @@ def section_grade(section, override=None):
 def merge_official(data, bb):
     """Attach Blackbaud grades to Canvas courses and build one missing-work list from both."""
     data["official"] = {k: bb.get(k) for k in ("fetched_at", "quarter", "absences", "conduct")}
+    # The Mac only pushes blackbaud.enc when grades change; it passes its latest check time on dispatch.
+    data["official"]["checked_at"] = max(filter(None, [bb.get("fetched_at"), os.environ.get("BB_CHECKED")]), default=None)
     sections = bb.get("sections") or []
     for c in data["courses"]:
         sec = next((s for s in sections if same_course(c["name"], s["name"])), None)
