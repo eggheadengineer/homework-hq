@@ -223,6 +223,7 @@ function band(p) {
   if (p >= 70) return { cls: "warning", label: "Needs work" };
   return { cls: "critical", label: "At risk" };
 }
+const courseTeacher = (c) => (c?.official?.teacher || c?.teacher || "the teacher");
 const grade = (c) => c?.official?.grade ?? c?.pct ?? null;
 function sectionGrade(sec, rows) {
   const cats = {};
@@ -271,12 +272,18 @@ function itemCard(i, opts = {}) {
     .map((c) => `<div class="quote"><b>${esc(c.who)}:</b> “${esc(c.text)}”</div>`).join("")
     + (i.bb_comment ? `<div class="quote"><b>Gradebook note:</b> “${esc(i.bb_comment)}”</div>` : "");
   const desc = i.desc && opts.showDesc ? `<details class="desc"><summary>Instructions</summary><p>${esc(i.desc)}</p></details>` : "";
+  const where = [];
+  if (i.modules?.length) where.push(`📍 In Canvas: <b>${esc(i.course)}</b> → Modules → <b>${esc(i.modules[0])}</b>`);
+  else if (i.source === "gradebook" && !i.linked) where.push(`📍 Only in the teacher's gradebook, not posted in Canvas. Ask ${esc(courseTeacher(opts.courseMap?.[i.course_id]))} what to hand in.`);
+  if (i.tool === "Canvas Quizzes") where.push(`📝 A Canvas quiz: open the assignment and press <b>Take the quiz</b>. If it's closed, ask ${esc(courseTeacher(opts.courseMap?.[i.course_id]))} to reopen it.`);
+  else if (i.tool) where.push(`🔗 Opens in <b>${esc(i.tool)}</b> in a new tab.${i.tool === "Google Assignments" ? " Open the doc there and press <b>Turn in</b>, or Canvas never sees it." : " Finish it there; Canvas updates when the tool reports back."}`);
+  const whereHtml = where.length && ["missing", "overdue", "upcoming"].includes(i.status) ? `<div class="meta" style="margin-top:6px">${where.join("<br>")}</div>` : "";
   const due = i.status === "missing" || i.status === "overdue"
     ? `Was due ${fmtDue(i.due)}${daysAgo(i.due) > 1 ? ` · ${daysAgo(i.due)} days ago` : ""}` : fmtDue(i.due);
   return `<div class="card ${cls}">
     <div class="row"><div><div class="title">${esc(i.name)}</div><div class="meta">${esc(i.course)} · ${due}</div></div>${gain}</div>
-    <div class="chips">${chips.join("")}</div>${teacherNotes}${desc}
-    ${i.url ? `<a class="btn" href="${esc(i.url)}" target="_blank" rel="noopener">${i.source === "gradebook" ? "Open class in Canvas" : "Open in Canvas"}</a>` : ""}
+    <div class="chips">${chips.join("")}</div>${whereHtml}${teacherNotes}${desc}
+    ${i.url ? `<a class="btn" href="${esc(i.url)}" target="_blank" rel="noopener">${i.source === "gradebook" && !i.linked ? "Open class in Canvas" : "Open in Canvas"}</a>` : ""}
   </div>`;
 }
 

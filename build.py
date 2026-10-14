@@ -107,6 +107,18 @@ def course_label(name: str):
     return (m.group(1).strip(), m.group(2)) if m else (name, "")
 
 
+TOOLS = {"quiz-lti": "Canvas Quizzes", "noredink": "NoRedInk", "assignments.google.com": "Google Assignments", "edpuzzle": "Edpuzzle", "pltw": "PLTW",
+         "wayground": "Wayground", "quizizz": "Wayground", "vhlcentral": "VHL Central", "ck12": "CK-12"}
+
+
+def tool_name(a):
+    """Name of the outside site an external-tool assignment opens, if any."""
+    if "external_tool" not in (a.get("submission_types") or []):
+        return None
+    url = ((a.get("external_tool_tag_attributes") or {}).get("url") or "").lower()
+    return next((v for k, v in TOOLS.items() if k in url), "an outside tool")
+
+
 def classify(a, sub, now):
     if sub.get("excused"):
         return "excused"
@@ -185,6 +197,7 @@ def build(cv: Canvas, now: datetime):
                 "recovery": bool(RECOVERY.search(a.get("name") or "")) or bool(pl.get("redo_request")),
                 "group": group, "graded_at": sub.get("graded_at"), "submitted_at": sub.get("submitted_at"),
                 "redo": bool(pl.get("redo_request")), "url": a.get("html_url"),
+                "tool": tool_name(a),
                 "desc": strip_html(a.get("description")), "comments": teacher_comments,
                 "counts": not a.get("omit_from_final_grade") and bool(a.get("points_possible")) and not sub.get("excused"),
                 "in_quarter": bool(quarter and due and quarter["start"] <= due <= quarter["end"]),
@@ -318,7 +331,25 @@ def merge_official(data, bb):
                     "url": course["url"] if course else None, "comments": [], "desc": "", "offline": True,
                     "assessment": bool(ASSESSMENT.search(f"{a['name']} {a['type']}")), "recovery": False,
                 })
+    for m in merged:
+        if m["source"] == "gradebook":
+            twin = next((i for i in data["items"] if i["course_id"] == m["course_id"] and same_assignment(i["name"], m["name"])), None)
+            if twin:
+                m.update(url=twin["url"], canvas_id=twin["id"], tool=twin.get("tool"), desc=twin.get("desc", ""), linked=True)
     data["missing"] = merged
+
+
+def add_locations(cv, data):
+    """Which Canvas module each missing assignment sits in, so it can actually be found."""
+    for m in data.get("missing", []):
+        aid = m.get("canvas_id") or (m["id"] if isinstance(m["id"], int) else None)
+        if not aid or not m.get("course_id"):
+            continue
+        try:
+            seq = cv.get(f"/api/v1/courses/{m['course_id']}/module_item_sequence", {"asset_type": "Assignment", "asset_id": aid})
+            m["modules"] = [mod.get("name") for s in seq for mod in s.get("modules", []) if mod.get("name")]
+        except requests.HTTPError:
+            pass
 
 
 # ---------------------------------------------------------------- history + alerts
@@ -372,8 +403,10 @@ def main():
     load_env()
     password = os.environ["PAGE_PASSWORD"]
     now = datetime.now(timezone.utc)
-    data = build(Canvas(os.environ["CANVAS_BASE_URL"], os.environ["CANVAS_TOKEN"]), now)
+    cv = Canvas(os.environ["CANVAS_BASE_URL"], os.environ["CANVAS_TOKEN"])
+    data = build(cv, now)
     merge_official(data, decrypt(BLACKBAUD.read_text(), password) if BLACKBAUD.exists() else {})
+    add_locations(cv, data)
 
     history = decrypt(HISTORY.read_text(), password) if HISTORY.exists() else {"days": {}, "state": None}
     msgs, state = alerts(history.get("state") or {}, data)
