@@ -57,8 +57,12 @@ async function ensureChrome() {
   await sleep(5000);
 }
 
+const pages = async () => ((await targets()) || []).filter((t) => t.type === "page");
+const closeTarget = (t) => fetch(`http://127.0.0.1:${PORT}/json/close/${t.id}`).catch(() => {});
+
 async function portalPage() {
-  let t = (await targets()).find((t) => t.type === "page" && t.url.includes(env.BB_HOST));
+  const all = await pages();
+  let t = all.find((t) => t.url.includes(env.BB_HOST) && !t.url.includes("#login")) || all.find((t) => t.url.includes(env.BB_HOST));
   if (!t) {
     const r = await fetch(`http://127.0.0.1:${PORT}/json/new?${encodeURIComponent(`${BASE}/app?svcid=edu`)}`, { method: "PUT" });
     t = await r.json();
@@ -77,7 +81,11 @@ function cdp(wsUrl) {
     await ready;
     const n = ++id;
     ws.send(JSON.stringify({ id: n, method, params }));
-    const d = await new Promise((res) => pending.set(n, res));
+    // Never wait forever: a navigating or frozen tab can swallow a reply.
+    const d = await Promise.race([
+      new Promise((res) => pending.set(n, res)),
+      sleep(30000).then(() => { pending.delete(n); throw new Error(`${method}: timed out`); }),
+    ]);
     if (d.error) throw new Error(`${method}: ${d.error.message}`);
     return d.result;
   };
@@ -111,32 +119,50 @@ async function clickWhere(page, finderJs) {
   return true;
 }
 
-async function login(page) {
+// Run fn against one tab, then detach.
+async function onTab(target, fn) {
+  const c = cdp(target.webSocketDebuggerUrl);
+  try { return await fn(c); } catch { return null; } finally { c.close(); }
+}
+
+// Re-login. The flow hops tabs and pages: portal email box -> Blackbaud ID hub ("Continue
+// with Google") -> Google account chooser -> back to the portal. Watch every tab and push
+// each step along; anything needing a password is left for a human.
+async function login() {
   log("session expired; signing in through Google");
-  const href = () => page.evaluate("location.href");
-  await page.send("Page.navigate", { url: `${BASE}/app?svcid=edu#login` });
-  await sleep(8000);
-  await page.evaluate(`(() => { const u = document.querySelector("#Username"); if (!u) return;
-    u.value = ${JSON.stringify(env.BB_EMAIL)}; u.dispatchEvent(new Event("input", {bubbles: true})); u.dispatchEvent(new Event("change", {bubbles: true}));
-    document.querySelector("#nextBtn")?.click(); })()`);
-  for (let i = 0; i < 45; i++) {
-    await sleep(2000);
-    const url = await href().catch(() => "");
-    if (url.includes("app.blackbaud.com/signin")) {
-      // Blackbaud ID hub page: hand off to Google with the saved session.
-      await clickWhere(page, `[...document.querySelectorAll("button")].find(b => /continue with google/i.test(b.innerText))`);
-      await sleep(4000);
-      continue;
+  for (const t of await pages())
+    if (/app\.blackbaud\.com\/signin|accounts\.google\.com|#login/.test(t.url)) await closeTarget(t);
+  await fetch(`http://127.0.0.1:${PORT}/json/new?${encodeURIComponent(`${BASE}/app?svcid=edu#login`)}`, { method: "PUT" });
+  const deadline = Date.now() + 150_000;
+  let emailSent = false, needHuman = false;
+  while (Date.now() < deadline && !needHuman) {
+    await sleep(3000);
+    for (const t of await pages()) {
+      if (t.url.includes("app.blackbaud.com/signin")) {
+        await onTab(t, (p) => clickWhere(p, `[...document.querySelectorAll("button")].find(b => /continue with google/i.test(b.innerText))`));
+        await sleep(3000);
+      } else if (t.url.includes("accounts.google.com")) {
+        needHuman = !!(await onTab(t, async (p) => {
+          await clickWhere(p, `document.querySelector('[data-identifier=${JSON.stringify(env.BB_EMAIL)}]') ||
+            [...document.querySelectorAll('[data-email]')].find(e => e.dataset.email === ${JSON.stringify(env.BB_EMAIL)})`);
+          await sleep(3000);
+          return p.evaluate(`!!document.querySelector('input[type=password]:not([aria-hidden=true])')`);
+        }));
+      } else if (t.url.includes(env.BB_HOST) && t.url.includes("#login") && !emailSent) {
+        emailSent = !!(await onTab(t, (p) => p.evaluate(`(() => { const u = document.querySelector("#Username"); if (!u) return false;
+          u.value = ${JSON.stringify(env.BB_EMAIL)}; u.dispatchEvent(new Event("input", {bubbles: true})); u.dispatchEvent(new Event("change", {bubbles: true}));
+          document.querySelector("#nextBtn")?.click(); return true; })()`)));
+      }
     }
-    if (url.includes("accounts.google.com")) {
-      // Account chooser: click our account. Any password/2-step page needs a human.
-      await clickWhere(page, `document.querySelector('[data-identifier=${JSON.stringify(env.BB_EMAIL)}]') ||
-        [...document.querySelectorAll('[data-email]')].find(e => e.dataset.email === ${JSON.stringify(env.BB_EMAIL)})`);
-      if (await page.evaluate(`!!document.querySelector('input[type=password]')`).catch(() => false)) break;
+    const portal = (await pages()).find((t) => t.url.includes(env.BB_HOST) && !t.url.includes("#login"));
+    if (portal && (await onTab(portal, signedIn))) {
+      for (const t of await pages()) if (t.id !== portal.id) await closeTarget(t); // tidy up
+      log("signed in");
+      return true;
     }
-    if (url.includes(env.BB_HOST) && (await signedIn(page))) { log("signed in"); return true; }
   }
-  return signedIn(page);
+  log(needHuman ? "Google is asking for a password" : "sign-in timed out");
+  return false;
 }
 
 /* ---------------- data ---------------- */
@@ -255,15 +281,20 @@ async function main() {
   const hour = new Date().getHours();
   if (hour < 6 && !process.argv.includes("--now")) return; // quiet overnight (local time)
   await ensureChrome();
-  const page = await portalPage();
+  let page = await portalPage();
   try {
-    if (!(await signedIn(page)) && !(await login(page))) {
-      log("LOGIN NEEDED");
-      await notify("Homework HQ: Blackbaud sign-in needed",
-        "Blackbaud logged out and Google wants a real sign-in. On the MacBook, open the Homework HQ Chrome window and sign in with Google.", "loginAlert");
-      process.exitCode = 2;
-      dispatch(null); // still refresh Canvas
-      return;
+    if (!(await signedIn(page))) {
+      page.close();
+      const ok = await login();
+      page = await portalPage();
+      if (!ok || !(await signedIn(page))) {
+        log("LOGIN NEEDED");
+        await notify("Homework HQ: Blackbaud sign-in needed",
+          "Blackbaud logged out and Google wants a real sign-in. On the MacBook, open the Homework HQ Chrome window and sign in with Google.", "loginAlert");
+        process.exitCode = 2;
+        dispatch(null); // still refresh Canvas
+        return;
+      }
     }
     state.loginAlert = 0;
     const data = await collect(page);
@@ -272,6 +303,9 @@ async function main() {
     if (!(await publish(data))) dispatch(checkedAt); // a push already triggers a rebuild
   } finally { page.close(); }
 }
+
+// Hard stop so a stuck run can never block the next launchd run.
+setTimeout(() => { log("ERROR run exceeded 4 minutes; exiting"); process.exit(3); }, 240_000).unref();
 
 main().catch(async (e) => {
   log("ERROR", e.message);
