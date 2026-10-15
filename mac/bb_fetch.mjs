@@ -101,6 +101,16 @@ async function signedIn(page) {
   try { return (await apiGet(page, "/api/webapp/context")).UserInfo?.UserId > 0; } catch { return false; }
 }
 
+// Real (trusted) mouse click: sign-in pages with invisible reCAPTCHA can ignore element.click().
+async function clickWhere(page, finderJs) {
+  const box = await page.evaluate(`(() => { const el = (${finderJs}); if (!el) return null;
+    el.scrollIntoView({block: "center"}); const r = el.getBoundingClientRect(); return {x: r.x + r.width / 2, y: r.y + r.height / 2}; })()`).catch(() => null);
+  if (!box) return false;
+  for (const type of ["mouseMoved", "mousePressed", "mouseReleased"])
+    await page.send("Input.dispatchMouseEvent", { type, x: box.x, y: box.y, button: "left", clickCount: 1 });
+  return true;
+}
+
 async function login(page) {
   log("session expired; signing in through Google");
   const href = () => page.evaluate("location.href");
@@ -114,14 +124,14 @@ async function login(page) {
     const url = await href().catch(() => "");
     if (url.includes("app.blackbaud.com/signin")) {
       // Blackbaud ID hub page: hand off to Google with the saved session.
-      await page.evaluate(`[...document.querySelectorAll("button")].find(b => /continue with google/i.test(b.innerText))?.click()`).catch(() => {});
+      await clickWhere(page, `[...document.querySelectorAll("button")].find(b => /continue with google/i.test(b.innerText))`);
+      await sleep(4000);
       continue;
     }
     if (url.includes("accounts.google.com")) {
       // Account chooser: click our account. Any password/2-step page needs a human.
-      await page.evaluate(`(() => { const el = document.querySelector('[data-identifier=${JSON.stringify(env.BB_EMAIL)}]') ||
-        [...document.querySelectorAll('[data-email]')].find(e => e.dataset.email === ${JSON.stringify(env.BB_EMAIL)});
-        el?.click(); })()`).catch(() => {});
+      await clickWhere(page, `document.querySelector('[data-identifier=${JSON.stringify(env.BB_EMAIL)}]') ||
+        [...document.querySelectorAll('[data-email]')].find(e => e.dataset.email === ${JSON.stringify(env.BB_EMAIL)})`);
       if (await page.evaluate(`!!document.querySelector('input[type=password]')`).catch(() => false)) break;
     }
     if (url.includes(env.BB_HOST) && (await signedIn(page))) { log("signed in"); return true; }
