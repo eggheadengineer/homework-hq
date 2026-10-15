@@ -238,7 +238,21 @@ async function collect(page) {
     conduct = { infractions: c[0]?.infraction_total ?? 0 };
   } catch (e) { log("conduct:", e.message); }
 
-  return { quarter, sections, absences, conduct };
+  // Class schedule for today and the next school days (blocks, rooms, special days like PSAT).
+  const schedule = {};
+  for (let d = 0, found = 0; d < 7 && found < 3; d++) {
+    const day = new Date(Date.now() + d * 864e5).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+    try {
+      const rows = await apiGet(page, `/api/schedule/MyDayCalendarStudentList/?userId=${SID}&scheduleDate=${day}&personaId=1&sharedView=true`);
+      const blocks = rows.filter((r) => !r.CanceledInd).map((r) => ({
+        title: r.CourseTitle.replace(/\s*-\s*\d+$/, ""), block: r.Block, start: r.MyDayStartTime, end: r.MyDayEndTime,
+        room: [r.BuildingName, r.RoomNumber].filter(Boolean).join(" "), section: r.SectionId,
+      }));
+      if (blocks.length) { schedule[day] = blocks; found++; }
+    } catch (e) { log("schedule:", e.message); }
+  }
+
+  return { quarter, sections, absences, conduct, schedule };
 }
 
 /* ---------------- encrypt + publish ---------------- */
