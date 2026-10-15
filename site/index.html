@@ -132,6 +132,14 @@ tr.low td.num:last-child { color: var(--critical); font-weight: 700; }
 footer { margin-top: 36px; color: var(--muted); font-size: 13px; }
 footer button { font: inherit; font-size: 13px; background: none; border: 0; color: var(--accent); cursor: pointer; padding: 0; }
 .hidden { display: none !important; }
+.plan li { list-style: none; display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.plan li:last-child { border-bottom: 0; }
+.plan ul { margin: 0; padding: 0; }
+.plan input[type=checkbox] { width: 22px; height: 22px; margin-top: 1px; flex: 0 0 auto; accent-color: var(--good); }
+.plan li.done .ptxt { text-decoration: line-through; color: var(--muted); }
+.plan .mins { margin-left: auto; color: var(--text-2); font-size: 13px; white-space: nowrap; }
+.sched td:first-child { white-space: nowrap; color: var(--text-2); width: 1%; padding-right: 10px; }
+.pack { color: var(--critical); font-weight: 600; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -379,9 +387,87 @@ const TABS = [
   ["today", "Today"], ["week", "Next 2 weeks"], ["grades", "Grades"], ["feedback", "Teacher notes"],
 ];
 
+const isSchoolWide = (a) => !D.courses.some((c) => c.official && same(c.name, a.course));
+const relevantAnn = (days) => (D.announcements || []).filter((a) => a.unread &&
+  Date.now() - Date.parse(a.at) < (isSchoolWide(a) ? 3 : days) * 864e5);
+const schoolDays = () => Object.keys(D.official?.schedule || {}).sort();
+function nextSchoolDay(t) {
+  return schoolDays().find((d) => d > t) || addDays(t, 1);
+}
+
+function buildPlan(x) {
+  const nsd = nextSchoolDay(x.t), plan = [];
+  for (const i of x.future.filter((i) => dayKey(i.due) <= nsd).sort((a, b) => Date.parse(a.due) - Date.parse(b.due)))
+    plan.push({ id: "due" + i.id, text: `${i.tool && i.tool !== "Canvas Quizzes" ? `Do in ${i.tool}` : i.tool ? "Take quiz" : i.offline ? "Do + pack" : "Do + submit"}: ${i.name}`, sub: `${i.course} · due ${fmtDue(i.due)}`, mins: i.assessment ? 30 : 20, url: i.url });
+  for (const i of x.tests.filter((i) => Date.parse(i.due) - Date.now() < 4 * 864e5 && dayKey(i.due) > nsd))
+    plan.push({ id: "study" + i.id, text: `Study: ${i.name}`, sub: `${i.course} · ${fmtDue(i.due)}`, mins: 30, url: i.url });
+  for (const i of x.open.filter((i) => i.if_done != null).slice(0, 2)) {
+    const g = grade(x.courseMap[i.course_id]);
+    plan.push({ id: "fix" + i.id, text: `Make up: ${i.name}`, sub: `${i.course}${g != null && i.if_done > g ? ` · +${(i.if_done - g).toFixed(1)}% if accepted` : ""}`, mins: 25, url: i.url });
+  }
+  for (const a of relevantAnn(7).filter((a) => !isSchoolWide(a)).slice(0, 3))
+    plan.push({ id: "ann" + a.at, text: `Read: ${a.title}`, sub: a.course, mins: 2, url: a.url });
+  return plan;
+}
+
+function planCard(x) {
+  const plan = buildPlan(x);
+  if (!plan.length) return `<div class="empty">✅ Nothing planned for tonight. Use the time on the oldest missing item or review notes.</div>`;
+  const key = "hwhq.done." + x.t;
+  let done = []; try { done = JSON.parse(ls.get(key) || "[]"); } catch {}
+  const total = plan.reduce((s, p) => s + p.mins, 0);
+  return `<div class="card plan" data-plan-key="${key}"><div class="row"><div class="title">Tonight's plan</div><div class="meta">about ${Math.round(total / 5) * 5} min</div></div><ul>`
+    + plan.map((p) => `<li class="${done.includes(p.id) ? "done" : ""}"><input type="checkbox" data-id="${esc(p.id)}" ${done.includes(p.id) ? "checked" : ""} aria-label="Done">
+      <div class="ptxt"><div>${p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.text)}</a>` : esc(p.text)}</div><div class="meta">${esc(p.sub)}</div></div><span class="mins">${p.mins} min</span></li>`).join("")
+    + `</ul><p class="hint" style="margin-bottom:0">Ticks are saved on this device only. Canvas still decides what's turned in.</p></div>`;
+}
+
+function wirePlan(root) {
+  root.querySelectorAll("[data-plan-key]").forEach((card) => {
+    card.querySelectorAll("input[type=checkbox]").forEach((cb) => cb.onchange = () => {
+      let done = []; try { done = JSON.parse(ls.get(card.dataset.planKey) || "[]"); } catch {}
+      done = cb.checked ? [...new Set([...done, cb.dataset.id])] : done.filter((d) => d !== cb.dataset.id);
+      ls.set(card.dataset.planKey, JSON.stringify(done));
+      cb.closest("li").classList.toggle("done", cb.checked);
+    });
+  });
+}
+
+function tomorrowCard(x) {
+  const day = nextSchoolDay(x.t), blocks = D.official?.schedule?.[day];
+  if (!blocks) return "";
+  const dueThatDay = x.future.filter((i) => dayKey(i.due) === day);
+  const forClass = (title) => dueThatDay.filter((i) => same(i.course, title));
+  const special = blocks.length <= 2;
+  const rows = blocks.map((b) => {
+    const items = forClass(b.title);
+    return `<tr><td>${esc(b.start)}</td><td><b>${esc(b.title)}</b> <span class="meta">${esc(b.block)} · ${esc(b.room)}</span>${items.map((i) => `<div class="pack">${i.offline && !i.tool ? "🎒 Bring" : "💻 Submit"}: ${esc(i.name)}${i.assessment ? " (test/quiz)" : ""}</div>`).join("")}</td></tr>`;
+  }).join("");
+  const d = new Date(day + "T12:00:00"), m = d.getMonth() + 1, dd = d.getDate();
+  const dateRe = new RegExp(`\\b0?${m}/0?${dd}\\b|${d.toLocaleDateString("en-US", { month: "long" })} ${dd}\\b|${d.toLocaleDateString("en-US", { month: "short" })}\\.? ${dd}\\b`, "i");
+  const mentions = (D.announcements || []).filter((a) => dateRe.test(`${a.title} ${a.text}`));
+  return `<h2>📅 ${day === addDays(x.t, 1) ? "Tomorrow" : fmtDay(day + "T12:00:00")}</h2>`
+    + mentions.map((a) => `<p class="hint">📌 <b>${esc(a.title)}</b> (${esc(a.course)}) mentions this day. <a href="${esc(a.url)}" target="_blank" rel="noopener">Read it</a></p>`).join("")
+    + (special ? `<p class="hint">Special schedule${blocks[0] ? `: ${esc(blocks[0].title)} ${esc(blocks[0].start)}–${esc(blocks[0].end)}` : ""}. Check announcements for what it's for.</p>` : "")
+    + `<div class="card"><table class="sched"><tbody>${rows}</tbody></table></div>`;
+}
+const same = (a, b) => { const n = (s) => (s || "").toLowerCase().replace(/[^a-z0-9 ]/g, "").trim(); a = n(a); b = n(b); return a && b && (a === b || a.startsWith(b) || b.startsWith(a)); };
+
+function annCard(a) {
+  return `<div class="card ${a.unread ? "test" : ""}"><div class="title">${a.unread ? "🔵 " : ""}${esc(a.title)}</div>
+    <div class="meta">${esc(a.course)} · ${fmtDay(a.at)}</div>
+    <details class="desc"><summary>Read it</summary><p>${esc(a.text)}</p></details>
+    ${a.url ? `<a class="btn" href="${esc(a.url)}" target="_blank" rel="noopener">Open in Canvas</a>` : ""}</div>`;
+}
+
 function viewToday(x) {
-  let h = `<h2>🚨 Fix these first</h2><p class="hint">Missing work from Canvas and the teachers' gradebooks, biggest grade boost first. The green number is the real class grade if it's turned in for full credit. Ask the teacher about late credit.</p>`;
-  h += x.open.length ? x.open.map((i) => itemCard(i, { courseMap: x.courseMap, showDesc: true })).join("")
+  let h = planCard(x) + tomorrowCard(x);
+  const recentAnn = relevantAnn(14);
+  if (recentAnn.length) h += `<h2>📣 Unread from teachers</h2><p class="hint">Teachers post instructions here: where to upload, what's on the test, what to print.</p>` + recentAnn.map(annCard).join("");
+  h += `<h2>🚨 Fix these first</h2><p class="hint">Missing work from Canvas and the teachers' gradebooks, biggest grade boost first. The green number is the real class grade if it's turned in for full credit. Ask the teacher about late credit.</p>`;
+  const top = x.open.slice(0, 5), rest = x.open.slice(5);
+  h += x.open.length ? top.map((i) => itemCard(i, { courseMap: x.courseMap, showDesc: true })).join("")
+      + (rest.length ? `<details><summary class="btn" style="cursor:pointer">Show ${rest.length} more missing</summary>${rest.map((i) => itemCard(i, { courseMap: x.courseMap, showDesc: true })).join("")}</details>` : "")
     : `<div class="empty">🎉 Nothing missing. Keep it that way.</div>`;
   if (x.recovery.length) {
     h += `<h2>💪 Chances to raise grades</h2><p class="hint">Corrections, late-work folders and redos due before the quarter ends.</p>`;
@@ -419,7 +505,7 @@ function viewWeek(x) {
 }
 
 function viewGrades(x) {
-  let h = "";
+  let h = habits(x);
   const days = Object.entries(D.history || {});
   h += `<h2>Missing work over time</h2>`;
   if (days.length >= 2) {
@@ -442,7 +528,8 @@ function viewGrades(x) {
     const pts = sec ? officialTrend(sec) : c.trend.map((p) => ({ at: p.at, v: p.pct, note: `${p.name}: ${p.score_pct != null ? Math.round(p.score_pct) + "%" : ""}` }));
     const nums = g == null ? `<div class="pct">—<small class="meta">no grades yet</small></div>`
       : `<div class="pct">${g.toFixed(1)}%<small><span class="chip ${b.cls}">${b.label}</span></small></div>`;
-    const extras = [missingN ? `<span class="chip critical">${missingN} missing</span>` : "", lowN ? `<span class="chip warning">${lowN} under 70%</span>` : "",
+    const extras = [c.if_all_done != null && g != null && c.if_all_done - g >= 0.5 ? `<span class="chip good">Turn in all missing → ${c.if_all_done.toFixed(1)}%</span>` : "",
+      missingN ? `<span class="chip critical">${missingN} missing</span>` : "", lowN ? `<span class="chip warning">${lowN} under 70%</span>` : "",
       sec ? "" : `<span class="chip">Canvas points only</span>`].join("");
     const teacher = sec?.teacher || c.teacher;
     let body = "";
@@ -483,8 +570,32 @@ function viewGrades(x) {
   return h;
 }
 
+function habits(x) {
+  const online = D.items.filter((i) => i.submitted_at && i.due);
+  const late = online.filter((i) => i.late || Date.parse(i.submitted_at) > Date.parse(i.due));
+  const sameDay = online.filter((i) => dayKey(i.submitted_at) === dayKey(i.due));
+  const byType = {};
+  for (const i of x.open) { const k = /quiz|test|exam|assessment/i.test(i.name) ? "Tests & quizzes" : /hw|homework/i.test(i.name) ? "Homework" : "Classwork & projects"; byType[k] = (byType[k] || 0) + 1; }
+  const weak = D.courses.flatMap((c) => (c.official?.categories || []).filter((k) => k.avg != null && k.avg < 70 && (k.weight ?? 1) > 0)
+    .map((k) => ({ name: `${c.name}: ${k.name}`, avg: k.avg }))).sort((a, b) => a.avg - b.avg);
+  const unreadAnn = (D.announcements || []).filter((a) => a.unread).length;
+  const rows = [
+    ["On time", online.length ? `${online.length - late.length} of ${online.length} online submissions (${Math.round(100 * (online.length - late.length) / online.length)}%)` : "—", late.length / Math.max(1, online.length) > 0.2],
+    ["Turned in the day it's due", online.length ? `${Math.round(100 * sameDay.length / online.length)}% of online work (last-minute pattern)` : "—", sameDay.length / Math.max(1, online.length) > 0.5],
+    ["Missing work by type", Object.entries(byType).map(([k, v]) => `${k} ${v}`).join(" · ") || "none", x.open.length > 0],
+    ["Unread teacher posts", `${unreadAnn} in the last 3 weeks`, unreadAnn > 2],
+    ["Graded work never opened", `${D.unseen_feedback ?? "—"} grade notices unread in Canvas`, (D.unseen_feedback || 0) > 5],
+  ];
+  return `<h2>Habits</h2><p class="hint">Patterns behind the grades. Fix the habit and the grades follow.</p><div class="card"><table><tbody>`
+    + rows.map(([k, v, bad]) => `<tr class="${bad ? "low" : ""}"><td>${bad ? "⚠️ " : "✓ "}${esc(k)}</td><td class="num" style="white-space:normal;text-align:right">${esc(v)}</td></tr>`).join("")
+    + `</tbody></table>`
+    + (weak.length ? `<h3 style="font-size:15px;margin:14px 0 4px">Weakest categories (counting toward the grade)</h3><table><tbody>${weak.slice(0, 6).map((w) => `<tr class="low"><td>${esc(w.name)}</td><td class="num">${w.avg.toFixed(1)}%</td></tr>`).join("")}</tbody></table>` : "")
+    + `</div>`;
+}
+
 function viewFeedback() {
-  let h = `<h2>Teacher notes</h2><p class="hint">Comments teachers left on assignments, newest first. They often say exactly what to fix.</p>`;
+  let h = (D.announcements || []).length ? `<h2>Announcements (last 3 weeks)</h2>` + D.announcements.map(annCard).join("") : "";
+  h += `<h2>Teacher notes</h2><p class="hint">Comments teachers left on assignments, newest first. They often say exactly what to fix.</p>`;
   const fb = D.feedback || [];
   h += fb.length ? fb.map((f) => `<div class="card ${f.from_teacher ? "" : "test"}">
       <div class="meta">${esc(f.course)} · ${esc(f.assignment)} · ${fmtDay(f.at)}</div>
@@ -509,7 +620,7 @@ function render() {
   $("#tabs").querySelectorAll("button").forEach((b) => b.onclick = () => { ls.set(LS_TAB, b.dataset.tab); render(); window.scrollTo({ top: 0 }); });
   for (const k in chartData) delete chartData[k];
   $("#view").innerHTML = { today: viewToday, week: viewWeek, grades: viewGrades, feedback: viewFeedback }[tab](x);
-  wireCharts($("#view"));
+  wireCharts($("#view")); wirePlan($("#view"));
 }
 
 /* ---------- boot ---------- */

@@ -242,6 +242,18 @@ def build(cv: Canvas, now: datetime):
                           "with": [p.get("name") for p in m.get("participants", []) if p.get("id") != me],
                           "unread": m.get("workflow_state") == "unread"})
 
+    names = {c["id"]: course_label(c.get("name") or "")[0] for c in raw_courses}
+    announcements, unseen_feedback = [], 0
+    for s in cv.get("/api/v1/users/self/activity_stream", {"only_active_courses": True, "per_page": 100}):
+        when = dt(s.get("created_at"))
+        if s.get("type") == "Submission" and not s.get("read_state"):
+            unseen_feedback += 1
+        if s.get("type") != "Announcement" or not when or when < now - timedelta(days=21):
+            continue
+        announcements.append({"at": iso(when), "title": s.get("title"), "text": strip_html(s.get("message"), 900),
+                              "course": names.get(s.get("course_id"), "School"), "unread": not s.get("read_state"),
+                              "url": s.get("html_url")})
+
     feedback.sort(key=lambda f: f["at"] or "", reverse=True)
     return {
         "generated_at": iso(now),
@@ -249,6 +261,7 @@ def build(cv: Canvas, now: datetime):
         "next_quarter": next(({"title": g["title"], "start": iso(g["start"])} for g in periods if g["start"] > now), None),
         "courses": sorted(courses, key=lambda c: (c["pct"] is None, c["pct"] or 0)),
         "items": items, "feedback": feedback[:60], "inbox": inbox,
+        "announcements": sorted(announcements, key=lambda a: a["at"], reverse=True), "unseen_feedback": unseen_feedback,
     }
 
 
@@ -297,7 +310,7 @@ def section_grade(section, override=None):
 
 def merge_official(data, bb):
     """Attach Blackbaud grades to Canvas courses and build one missing-work list from both."""
-    data["official"] = {k: bb.get(k) for k in ("fetched_at", "quarter", "absences", "conduct")}
+    data["official"] = {k: bb.get(k) for k in ("fetched_at", "quarter", "absences", "conduct", "schedule")}
     # The Mac only pushes blackbaud.enc when grades change; it passes its latest check time on dispatch.
     data["official"]["checked_at"] = max(filter(None, [bb.get("fetched_at"), os.environ.get("BB_CHECKED")]), default=None)
     sections = bb.get("sections") or []
@@ -337,6 +350,14 @@ def merge_official(data, bb):
             if twin:
                 m.update(url=twin["url"], canvas_id=twin["id"], tool=twin.get("tool"), desc=twin.get("desc", ""), linked=True)
     data["missing"] = merged
+    for c in data["courses"]:
+        sec = c.get("official")
+        if not sec:
+            continue
+        fixes = [a for a in sec["assignments"] if a["missing"] and not a["exempt"] and a["counts"] and a.get("max")]
+        if fixes:
+            fixed = {**sec, "assignments": [{**a, "points": a["max"]} if a in fixes else a for a in sec["assignments"]]}
+            c["if_all_done"] = section_grade(fixed)
 
 
 def add_locations(cv, data):
