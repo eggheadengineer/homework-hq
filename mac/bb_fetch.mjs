@@ -111,7 +111,12 @@ async function login(page) {
     document.querySelector("#nextBtn")?.click(); })()`);
   for (let i = 0; i < 45; i++) {
     await sleep(2000);
-    const url = await href();
+    const url = await href().catch(() => "");
+    if (url.includes("app.blackbaud.com/signin")) {
+      // Blackbaud ID hub page: hand off to Google with the saved session.
+      await page.evaluate(`[...document.querySelectorAll("button")].find(b => /continue with google/i.test(b.innerText))?.click()`).catch(() => {});
+      continue;
+    }
     if (url.includes("accounts.google.com")) {
       // Account chooser: click our account. Any password/2-step page needs a human.
       await page.evaluate(`(() => { const el = document.querySelector('[data-identifier=${JSON.stringify(env.BB_EMAIL)}]') ||
