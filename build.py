@@ -323,6 +323,10 @@ def merge_official(data, bb):
     merged = []
     for i in canvas_open:
         course = next((c for c in data["courses"] if c["id"] == i["course_id"]), None)
+        # A 0-point Canvas item can't move a grade; in classes graded in Blackbaud it's a
+        # placeholder (e.g. Spanish quizzes taken in class and graded in the gradebook).
+        if course and course.get("official") and not i.get("points"):
+            continue
         merged.append({**i, "source": "canvas", "if_done": None if course and course.get("official") else i.get("if_done")})
     for s in sections:
         for a in s["assignments"]:
