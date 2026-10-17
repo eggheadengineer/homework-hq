@@ -334,41 +334,70 @@ def merge_official(data, bb):
         c["official"] = sec
     data["unmatched_sections"] = [s for s in sections if not any(c.get("official") is s for c in data["courses"])]
 
-    canvas_open = [i for i in data["items"] if i["status"] in ("missing", "overdue")]
-    merged = []
-    for i in canvas_open:
-        course = next((c for c in data["courses"] if c["id"] == i["course_id"]), None)
-        # A 0-point Canvas item can't move a grade; in classes graded in Blackbaud it's a
-        # placeholder (e.g. Spanish quizzes taken in class and graded in the gradebook).
-        if course and course.get("official") and not i.get("points"):
+    # Blackbaud is the record for anything graded or flagged missing. Canvas keeps what's
+    # assigned, due dates, instructions and links. Attach each Canvas item's gradebook twin
+    # and let the gradebook overrule Canvas's status and score.
+    for c in data["courses"]:
+        sec = c.get("official")
+        if not sec:
             continue
-        merged.append({**i, "source": "canvas", "if_done": None if course and course.get("official") else i.get("if_done")})
+        for i in (i for i in data["items"] if i["course_id"] == c["id"]):
+            gb_due = lambda a: {"name": a["name"], "due": a["due"] + ":00" if a["due"] else None}
+            twin = next((a for a in sec["assignments"] if same_assignment(i["name"], a["name"])), None) \
+                or next((a for a in sec["assignments"] if loose_twin(i, gb_due(a))), None)
+            if not twin:
+                i["gb"] = None
+                if i["status"] == "graded":
+                    i["not_in_gradebook"] = True
+                continue
+            i["gb"] = {k: twin.get(k) for k in ("id", "points", "max", "pct", "missing", "late", "exempt", "comment")}
+            i["canvas_status"], i["canvas_score"] = i["status"], i["score"]
+            if twin["exempt"]:
+                i["status"] = "excused"
+            elif twin["missing"]:
+                i["status"] = "missing"
+            elif twin["points"] is not None:
+                i.update(status="graded", score=twin["points"], points=twin["max"], pct=twin.get("pct"), late=twin.get("late"))
+            elif i["status"] in ("missing", "overdue"):
+                i["status"] = "past_offline"  # Canvas flag, but the teacher hasn't marked it missing
+
+    merged = []
+    for i in data["items"]:
+        if i["status"] not in ("missing", "overdue"):
+            continue
+        course = next((c for c in data["courses"] if c["id"] == i["course_id"]), None)
+        if course and course.get("official"):
+            if i.get("gb"):
+                continue  # the gradebook entry below represents it
+            if not i.get("points"):
+                continue  # 0-point Canvas placeholder; can't move a grade
+            merged.append({**i, "source": "canvas", "canvas_only": True, "if_done": None})
+        else:
+            merged.append({**i, "source": "canvas"})
     for s in sections:
+        course = next((c for c in data["courses"] if c.get("official") is s), None)
         for a in s["assignments"]:
             if not a["missing"] or a["exempt"]:
                 continue
-            match = next((m for m in merged if same_course(m["course"], s["name"]) and same_assignment(m["name"], a["name"])), None)
-            if_done = section_grade(s, (a["id"], a["max"])) if a.get("max") and a["counts"] else None
-            if match:
-                match["source"] = "both"
-                match["if_done"] = if_done if if_done is not None else match.get("if_done")
-                match["bb_comment"] = a["comment"]
-            else:
-                course = next((c for c in data["courses"] if c.get("official") is s), None)
-                merged.append({
-                    "id": f"bb{a['id']}", "course": course["name"] if course else s["name"],
-                    "course_id": course["id"] if course else None, "name": a["name"],
-                    "due": a["due"] + ":00" if a["due"] else None, "points": a["max"], "score": a["points"], "pct": a["pct"],
-                    "status": "missing", "source": "gradebook", "if_done": if_done, "bb_comment": a["comment"],
-                    "url": course["url"] if course else None, "comments": [], "desc": "", "offline": True,
-                    "assessment": bool(ASSESSMENT.search(f"{a['name']} {a['type']}")), "recovery": False,
-                })
-    for m in merged:
-        if m["source"] == "gradebook":
-            twin = next((i for i in data["items"] if i["course_id"] == m["course_id"] and same_assignment(i["name"], m["name"])), None) \
-                or next((i for i in data["items"] if i["course_id"] == m["course_id"] and loose_twin(i, m)), None)
+            twins = [i for i in data["items"] if (i.get("gb") or {}).get("id") == a["id"]]
+            # Prefer the Canvas copy that was actually turned in (e.g. a separate "UPLOAD HERE" slot).
+            twin = next((i for i in twins if i.get("canvas_status") == "submitted"), twins[0] if twins else None)
+            entry = {
+                "id": twin["id"] if twin else f"bb{a['id']}", "course": course["name"] if course else s["name"],
+                "course_id": course["id"] if course else None, "name": a["name"],
+                "due": a["due"] + ":00" if a["due"] else None, "points": a["max"], "score": a["points"], "pct": a.get("pct"),
+                "status": "missing", "source": "both" if twin else "gradebook",
+                "if_done": section_grade(s, (a["id"], a["max"])) if a.get("max") and a["counts"] else None,
+                "bb_comment": a["comment"], "url": course["url"] if course else None, "comments": [], "desc": "",
+                "offline": True, "assessment": bool(ASSESSMENT.search(f"{a['name']} {a['type']}")), "recovery": False,
+            }
             if twin:
-                m.update(url=twin["url"], canvas_id=twin["id"], tool=twin.get("tool"), desc=twin.get("desc", ""), linked=True)
+                entry.update(url=twin["url"], canvas_id=twin["id"], tool=twin.get("tool"), desc=twin.get("desc", ""),
+                             comments=twin.get("comments", []), offline=twin.get("offline", True), linked=True,
+                             canvas_name=twin["name"])
+                if twin.get("canvas_status") == "submitted" and twin.get("submitted_at"):
+                    entry["submitted_in_canvas"] = twin["submitted_at"]
+            merged.append(entry)
     data["missing"] = merged
     for c in data["courses"]:
         sec = c.get("official")
@@ -405,11 +434,12 @@ def snapshot(data):
 def alerts(prev_state, data):
     """Compare against the last run: newly missing work and newly posted grades."""
     msgs, state = [], {}
+    graded_in_bb = {c["id"] for c in data["courses"] if c.get("official")}
     for i in data["items"]:
         state[str(i["id"])] = [i["status"], i["score"]]
         old = prev_state.get(str(i["id"]))
-        if old is None:
-            continue
+        if old is None or (i["course_id"] in graded_in_bb and i.get("gb")):
+            continue  # gradebook alerts below cover it
         if i["status"] in ("missing", "overdue") and old[0] not in ("missing", "overdue"):
             msgs.append(f"⚠️ {i['course']}: \"{i['name']}\" is now missing ({i['points'] or 0:g} pts)")
         elif i["score"] is not None and old[1] != i["score"]:

@@ -275,13 +275,18 @@ function itemCard(i, opts = {}) {
   const gain = (i.if_done != null && g != null && i.if_done - g >= 0.05)
     ? `<div class="gain">+${(i.if_done - g).toFixed(1)}% → ${i.if_done.toFixed(1)}%</div>` : "";
   if (i.if_done != null && g != null && Math.abs(i.if_done - g) < 0.05) chips.push(`<span class="chip">Doesn't change the grade</span>`);
-  if (i.source === "gradebook") chips.push(`<span class="chip info">📒 Teacher gradebook</span>`);
+  if (i.source === "gradebook" || i.source === "both") chips.push(`<span class="chip info">📒 Gradebook says missing</span>`);
+  if (i.submitted_in_canvas) chips.push(`<span class="chip good">✅ Turned in on Canvas ${esc(fmtDay(i.submitted_in_canvas))}</span>`);
+  if (i.canvas_only) chips.push(`<span class="chip warning">Canvas only · not in gradebook yet</span>`);
+  if (i.not_in_gradebook) chips.push(`<span class="chip">Not in gradebook</span>`);
+  if (i.canvas_name && i.canvas_name !== i.name) chips.push(`<span class="chip">Canvas: ${esc(i.canvas_name)}</span>`);
   const teacherNotes = (i.comments || []).filter((c) => c.from_teacher).slice(-2)
     .map((c) => `<div class="quote"><b>${esc(c.who)}:</b> “${esc(c.text)}”</div>`).join("")
     + (i.bb_comment ? `<div class="quote"><b>Gradebook note:</b> “${esc(i.bb_comment)}”</div>` : "");
   const desc = i.desc && opts.showDesc ? `<details class="desc"><summary>Instructions</summary><p>${esc(i.desc)}</p></details>` : "";
   const where = [];
-  if (i.modules?.length) where.push(`📍 In Canvas: <b>${esc(i.course)}</b> → Modules → <b>${esc(i.modules[0])}</b>`);
+  if (i.submitted_in_canvas) where.push(`⚠️ Turned in on Canvas, but the gradebook still says missing. Check that the teacher can open it (sharing settings), then message ${esc(courseTeacher(opts.courseMap?.[i.course_id]))} and ask for it to be graded.`);
+  else if (i.modules?.length) where.push(`📍 In Canvas: <b>${esc(i.course)}</b> → Modules → <b>${esc(i.modules[0])}</b>`);
   else if (i.source === "gradebook" && !i.linked) where.push(`📍 Only in the teacher's gradebook, not posted in Canvas. Ask ${esc(courseTeacher(opts.courseMap?.[i.course_id]))} what to hand in.`);
   if (i.tool === "Canvas Quizzes") where.push(`📝 A Canvas quiz: open the assignment and press <b>Take the quiz</b>. If it's closed, ask ${esc(courseTeacher(opts.courseMap?.[i.course_id]))} to reopen it.`);
   else if (i.tool) where.push(`🔗 Opens in <b>${esc(i.tool)}</b> in a new tab.${i.tool === "Google Assignments" ? " Open the doc there and press <b>Turn in</b>, or Canvas never sees it." : " Finish it there; Canvas updates when the tool reports back."}`);
@@ -473,7 +478,7 @@ function viewToday(x) {
   let h = calendarCard() + planCard(x) + tomorrowCard(x);
   const recentAnn = relevantAnn(14);
   if (recentAnn.length) h += `<h2>📣 Unread from teachers</h2><p class="hint">Teachers post instructions here: where to upload, what's on the test, what to print.</p>` + recentAnn.map(annCard).join("");
-  h += `<h2>🚨 Fix these first</h2><p class="hint">Missing work from Canvas and the teachers' gradebooks, biggest grade boost first. The green number is the real class grade if it's turned in for full credit. Ask the teacher about late credit.</p>`;
+  h += `<h2>🚨 Fix these first</h2><p class="hint">Missing work as recorded in the teachers' gradebooks (Blackbaud), biggest grade boost first. Canvas-only flags are marked. The green number is the real class grade if it's turned in for full credit. Ask the teacher about late credit.</p>`;
   const top = x.open.slice(0, 5), rest = x.open.slice(5);
   h += x.open.length ? top.map((i) => itemCard(i, { courseMap: x.courseMap, showDesc: true })).join("")
       + (rest.length ? `<details><summary class="btn" style="cursor:pointer">Show ${rest.length} more missing</summary>${rest.map((i) => itemCard(i, { courseMap: x.courseMap, showDesc: true })).join("")}</details>` : "")
