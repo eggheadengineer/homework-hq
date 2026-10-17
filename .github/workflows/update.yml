@@ -51,8 +51,9 @@ jobs:
           PAGE_PASSWORD: ${{ secrets.PAGE_PASSWORD }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           BB_CHECKED: ${{ inputs.bb_checked }}
-          TYLER_CAL_ID: ${{ secrets.TYLER_CAL_ID }}
-          TYLER_CAL_ICS: ${{ secrets.TYLER_CAL_ICS }}
+          STUDY_CAL_ID: ${{ secrets.STUDY_CAL_ID }}
+          STUDY_CAL_NAME: ${{ secrets.STUDY_CAL_NAME }}
+          STUDY_CAL_ICS: ${{ secrets.STUDY_CAL_ICS }}
           SITE_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
         run: python build.py
 

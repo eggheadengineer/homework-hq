@@ -478,10 +478,10 @@ def main():
     data = build(cv, now)
     merge_official(data, decrypt(BLACKBAUD.read_text(), password) if BLACKBAUD.exists() else {})
     add_locations(cv, data)
-    cal_id, cal_ics = os.environ.get("TYLER_CAL_ID"), os.environ.get("TYLER_CAL_ICS")
+    cal_id, cal_ics = os.environ.get("STUDY_CAL_ID"), os.environ.get("STUDY_CAL_ICS")
     if cal_id:
         from urllib.parse import quote
-        data["calendar"] = {"name": "Tyler Schedule", "google": f"https://calendar.google.com/calendar/u/0/r?cid={quote(cal_id)}",
+        data["calendar"] = {"name": os.environ.get("STUDY_CAL_NAME") or "Study schedule", "google": f"https://calendar.google.com/calendar/u/0/r?cid={quote(cal_id)}",
                             "ics": cal_ics or None}
 
     history = decrypt(HISTORY.read_text(), password) if HISTORY.exists() else {"days": {}, "state": None}
