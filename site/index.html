@@ -410,6 +410,15 @@ function buildPlan(x) {
   return plan;
 }
 
+function calendarCard() {
+  const c = D.calendar; if (!c) return "";
+  const webcal = c.ics ? c.ics.replace(/^https:/, "webcal:") : null;
+  return `<div class="card test"><div class="row"><div><div class="title">📅 ${esc(c.name)}</div>
+    <div class="meta">Study blocks with reminders and Canvas links, in your calendar.</div></div></div>
+    <a class="btn" href="${esc(c.google)}" target="_blank" rel="noopener">Add to Google Calendar</a>
+    ${webcal ? ` <a class="btn" href="${esc(webcal)}">Subscribe on iPhone</a>` : ""}</div>`;
+}
+
 function planCard(x) {
   const plan = buildPlan(x);
   if (!plan.length) return `<div class="empty">✅ Nothing planned for tonight. Use the time on the oldest missing item or review notes.</div>`;
@@ -461,7 +470,7 @@ function annCard(a) {
 }
 
 function viewToday(x) {
-  let h = planCard(x) + tomorrowCard(x);
+  let h = calendarCard() + planCard(x) + tomorrowCard(x);
   const recentAnn = relevantAnn(14);
   if (recentAnn.length) h += `<h2>📣 Unread from teachers</h2><p class="hint">Teachers post instructions here: where to upload, what's on the test, what to print.</p>` + recentAnn.map(annCard).join("");
   h += `<h2>🚨 Fix these first</h2><p class="hint">Missing work from Canvas and the teachers' gradebooks, biggest grade boost first. The green number is the real class grade if it's turned in for full credit. Ask the teacher about late credit.</p>`;
