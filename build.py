@@ -308,6 +308,21 @@ def section_grade(section, override=None):
     return round(100 * e / m, 2) if m else None
 
 
+def _stems(s):
+    import unicodedata
+    s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode().lower()
+    return {w[:7] for w in re.findall(r"[a-z]{7,}", s)}
+
+
+def loose_twin(canvas_item, gb_item):
+    """Same work under different names in Canvas vs the gradebook (e.g. 'PA: W:Pret. Presentation'
+    vs 'Presentacion: Todo Sobre Mi'): due within 3 days and sharing a long word root."""
+    a, b = dt(canvas_item.get("due")), dt(gb_item.get("due"))
+    if not a or not b or abs((a - b).total_seconds()) > 3 * 86400:
+        return False
+    return bool(_stems(canvas_item["name"]) & _stems(gb_item["name"]))
+
+
 def merge_official(data, bb):
     """Attach Blackbaud grades to Canvas courses and build one missing-work list from both."""
     data["official"] = {k: bb.get(k) for k in ("fetched_at", "quarter", "absences", "conduct", "schedule")}
@@ -350,7 +365,8 @@ def merge_official(data, bb):
                 })
     for m in merged:
         if m["source"] == "gradebook":
-            twin = next((i for i in data["items"] if i["course_id"] == m["course_id"] and same_assignment(i["name"], m["name"])), None)
+            twin = next((i for i in data["items"] if i["course_id"] == m["course_id"] and same_assignment(i["name"], m["name"])), None) \
+                or next((i for i in data["items"] if i["course_id"] == m["course_id"] and loose_twin(i, m)), None)
             if twin:
                 m.update(url=twin["url"], canvas_id=twin["id"], tool=twin.get("tool"), desc=twin.get("desc", ""), linked=True)
     data["missing"] = merged
