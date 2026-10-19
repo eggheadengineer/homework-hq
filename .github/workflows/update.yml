@@ -14,7 +14,7 @@ on:
         default: ""
   push:
     branches: [main]
-    paths: ["site/index.html", "build.py", "blackbaud.enc", ".github/workflows/update.yml"]
+    paths: ["site/**", "build.py", "blackbaud.enc", ".github/workflows/update.yml"]
 
 permissions:
   contents: write

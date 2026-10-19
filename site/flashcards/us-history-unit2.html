@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Revolution Flashcards</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🃏</text></svg>">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f4f2; --surface: #fcfcfb; --surface-2: #f0efec; --border: #e2e1dc;
+  --text: #0b0b0b; --text-2: #52514e; --muted: #7a7974; --accent: #2a78d6;
+  --good: #0ca30c; --good-bg: #e8f6e8; --critical: #d03b3b; --critical-bg: #fbe9e9;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #111110; --surface: #1a1a19; --surface-2: #232321; --border: #33332f;
+    --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e86; --accent: #3987e5;
+    --good-bg: #13291a; --critical-bg: #321617;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111110; --surface: #1a1a19; --surface-2: #232321; --border: #33332f;
+  --text: #f0efec; --text-2: #c3c2b7; --muted: #8f8e86; --accent: #3987e5;
+  --good-bg: #13291a; --critical-bg: #321617;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 17px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif; }
+.wrap { max-width: 640px; margin: 0 auto; padding: 16px 16px 48px; min-height: 100vh; display: flex; flex-direction: column; }
+h1 { font-size: 20px; margin: 4px 0 2px; }
+.sub { color: var(--text-2); font-size: 14px; }
+.chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 12px 0 8px; }
+.chips button { flex: 0 0 auto; border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  padding: 6px 12px; border-radius: 999px; font: inherit; font-size: 14px; cursor: pointer; }
+.chips button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+.bar { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; margin: 6px 0 4px; }
+.bar > div { height: 100%; background: var(--good); transition: width .3s; }
+.stats { display: flex; justify-content: space-between; color: var(--text-2); font-size: 13px; font-variant-numeric: tabular-nums; }
+.card { flex: 1; min-height: 300px; margin: 14px 0; perspective: 1200px; cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; }
+.inner { position: relative; width: 100%; height: 100%; min-height: 300px; transition: transform .45s; transform-style: preserve-3d; }
+.card.flipped .inner { transform: rotateY(180deg); }
+.face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 16px; padding: 24px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; text-align: center; }
+.face.back { transform: rotateY(180deg); }
+.tag { position: absolute; top: 14px; left: 16px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.hint { position: absolute; bottom: 14px; font-size: 13px; color: var(--muted); }
+.front .q { font-size: 26px; font-weight: 700; line-height: 1.25; }
+.back .a { font-size: 19px; line-height: 1.45; }
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.actions button { font: inherit; font-weight: 700; padding: 16px; border-radius: 12px; border: 2px solid; cursor: pointer; }
+#again { background: var(--critical-bg); color: var(--critical); border-color: var(--critical); }
+#got { background: var(--good-bg); color: var(--good); border-color: var(--good); }
+.actions button:disabled { opacity: .4; cursor: default; }
+.tools { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-top: 18px; font-size: 14px; }
+.tools button, .tools label { background: none; border: 0; color: var(--accent); font: inherit; cursor: pointer; padding: 0; }
+.done { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 10px; }
+.done .big { font-size: 56px; }
+.done button { font: inherit; font-weight: 700; padding: 12px 20px; border-radius: 12px; border: 0; background: var(--accent); color: #fff; cursor: pointer; }
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px;
+  border-radius: 10px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.show { opacity: 1; }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>American Revolution flashcards</h1>
+  <div class="sub">Unit 2 test review. Tap the card to flip it, then be honest.</div>
+  <div class="chips" id="decks" role="group" aria-label="Deck"></div>
+  <div class="bar"><div id="progress" style="width:0"></div></div>
+  <div class="stats"><span id="left"></span><span id="score"></span></div>
+
+  <div id="study">
+    <div class="card" id="card" role="button" tabindex="0" aria-label="Flip card">
+      <div class="inner">
+        <div class="face front"><span class="tag" id="tagF"></span><div class="q" id="q"></div><span class="hint">tap to flip</span></div>
+        <div class="face back"><span class="tag" id="tagB"></span><div class="a" id="a"></div></div>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="again" disabled>✗ Again</button>
+      <button id="got" disabled>✓ Got it</button>
+    </div>
+  </div>
+
+  <div class="done hidden" id="done">
+    <div class="big">🎉</div>
+    <div><b>Deck done.</b> <span id="doneMsg"></span></div>
+    <button id="restart">Go again</button>
+  </div>
+
+  <div class="tools">
+    <button id="shuffle">Shuffle</button>
+    <label><input type="checkbox" id="reverse"> Answer first</label>
+    <button id="quizlet">Copy for Quizlet</button>
+    <button id="theme">Theme</button>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const CARDS = [
+  // Timeline
+  ["Timeline", "French and Indian War", "1754–1763. Britain vs. France for North America (part of the Seven Years' War). Britain wins but nearly doubles its debt."],
+  ["Timeline", "Treaty of Paris (1763)", "Ends the French and Indian War. France loses its North American land."],
+  ["Timeline", "Proclamation of 1763", "Bans colonists from settling west of the Appalachian Mountains. Makes colonists feel Britain doesn't care about them."],
+  ["Timeline", "Sugar Act (1764)", "Tax on molasses and other imports. Accused smugglers tried by a judge with no jury."],
+  ["Timeline", "Stamp Act (1765)", "First DIRECT tax on colonists: newspapers, legal papers, playing cards. Leads to boycotts and the Sons of Liberty; repealed 1766."],
+  ["Timeline", "Declaratory Act (1766)", "Passed the day the Stamp Act was repealed. Says Parliament can make laws for the colonies \"in all cases whatsoever.\""],
+  ["Timeline", "Townshend Acts (1767)", "Taxes on imported glass, lead, paint, paper and tea. Colonists boycott again."],
+  ["Timeline", "Boston Massacre", "March 5, 1770. British soldiers fire into a crowd; 5 colonists killed, including Crispus Attucks. Paul Revere's engraving makes it propaganda."],
+  ["Timeline", "Tea Act (1773)", "Helps the British East India Company sell tea directly to the colonies. Leads to the Boston Tea Party."],
+  ["Timeline", "Boston Tea Party", "Dec 16, 1773. Colonists dump about 18,000 pounds of East India Company tea into Boston Harbor."],
+  ["Timeline", "Intolerable (Coercive) Acts", "1774. Punish Boston for the Tea Party: harbor closed, Massachusetts under military rule, Quartering Act."],
+  ["Timeline", "First Continental Congress", "September 1774, Philadelphia. 56 delegates; colonies unite to boycott and protest to the king."],
+  ["Timeline", "Lexington and Concord", "April 19, 1775. First battles of the war (\"the shot heard round the world\"). British march to seize colonial weapons."],
+  ["Timeline", "Second Continental Congress", "May 1775. Creates the Continental Army with George Washington as commander."],
+  ["Timeline", "Battle of Bunker Hill", "June 17, 1775 (really Breed's Hill). British win but lose over 1,000 men. Shows colonists can fight."],
+  ["Timeline", "Olive Branch Petition", "July 1775. Congress's last peace offer to King George III. He rejects it."],
+  ["Timeline", "Common Sense", "January 1776, by Thomas Paine. Convinces ordinary colonists to support independence; attacks monarchy."],
+  ["Timeline", "Declaration of Independence", "Adopted July 4, 1776. Written mainly by Thomas Jefferson."],
+  ["Timeline", "Battle of Trenton", "Dec 26, 1776. Washington crosses the Delaware and surprises the Hessians. Big morale boost."],
+  ["Timeline", "Battle of Saratoga", "October 1777. British General Burgoyne surrenders. TURNING POINT: convinces France to ally with America (1778)."],
+  ["Timeline", "Valley Forge", "Winter 1777–78. Freezing, starving camp. Baron von Steuben trains the army into a disciplined force."],
+  ["Timeline", "Battle of Yorktown", "Oct 19, 1781. American and French armies trap Cornwallis; the French navy blocks escape by sea. British surrender."],
+  ["Timeline", "Treaty of Paris (1783)", "Ends the Revolution. Britain recognizes U.S. independence; borders reach the Mississippi River."],
+  // Key terms
+  ["Terms", "No taxation without representation", "Colonists had no members in Parliament, so they argued Parliament had no right to tax them."],
+  ["Terms", "Boycott", "Refusing to buy British goods to pressure Parliament. It got the Stamp Act repealed."],
+  ["Terms", "Sons of Liberty", "Secret protest group (Samuel Adams). Led resistance to British taxes and the Boston Tea Party."],
+  ["Terms", "Writs of assistance", "General search warrants letting British officials search homes and ships for smuggled goods."],
+  ["Terms", "Minutemen", "Colonial militia ready to fight \"at a minute's notice.\""],
+  ["Terms", "Patriots", "Colonists who supported independence."],
+  ["Terms", "Loyalists (Tories)", "Colonists who stayed loyal to Britain, often wealthier people, officials, or those who feared disorder."],
+  ["Terms", "Hessians", "German soldiers hired by Britain to fight in America."],
+  ["Terms", "Quartering Act", "Made colonists house and supply British soldiers."],
+  ["Terms", "Inflation", "Congress printed paper money (\"Continentals\") until it lost value and prices rose."],
+  ["Terms", "Egalitarianism", "Belief in the equality of all people. Grew after the war, but at first only for white men."],
+  // People
+  ["People", "King George III", "British king during the Revolution. Rejected the Olive Branch Petition; target of the Declaration's grievances."],
+  ["People", "Samuel Adams", "Boston leader who founded the Sons of Liberty."],
+  ["People", "Crispus Attucks", "Sailor of African and Native American ancestry; first to die in the Boston Massacre."],
+  ["People", "Paul Revere", "Silversmith; made the Boston Massacre engraving; rode to warn the minutemen before Lexington and Concord."],
+  ["People", "Thomas Paine", "Wrote Common Sense (1776), arguing for independence."],
+  ["People", "Thomas Jefferson", "Main author of the Declaration of Independence."],
+  ["People", "George Washington", "Commander of the Continental Army. Kept the army together and won at Trenton and Yorktown."],
+  ["People", "Marquis de Lafayette", "Young French noble who fought for America and helped win French support; at Yorktown."],
+  ["People", "Baron von Steuben", "Prussian officer who trained the Continental Army at Valley Forge."],
+  ["People", "Charles Cornwallis", "British general who surrendered at Yorktown in 1781."],
+  // Ideas
+  ["Ideas", "John Locke", "Natural rights to life, liberty and property. Government needs the consent of the governed; people may overthrow one that violates their rights."],
+  ["Ideas", "Natural rights", "Rights everyone is born with that government can't take away (Locke: life, liberty, property)."],
+  ["Ideas", "Consent of the governed", "Government gets its power from the people it governs."],
+  ["Ideas", "Montesquieu", "Separation of powers into legislative, executive and judicial branches."],
+  ["Ideas", "Rousseau", "The social contract: government's power comes from the people."],
+  ["Ideas", "\"Life, liberty and the pursuit of happiness\"", "Jefferson's version of Locke's natural rights, in the Declaration."],
+  ["Ideas", "Four parts of the Declaration", "1) Preamble  2) Statement of rights (\"all men are created equal\")  3) List of grievances against King George III  4) Resolution: \"free and independent states\""],
+  ["Ideas", "Grievances in the Declaration (examples)", "Taxes without consent, troops kept in peacetime, no trial by jury, cutting off colonial trade."],
+  // Why America won
+  ["Why we won", "British advantages", "Strongest army and navy, more money, Loyalist support, hired Hessians."],
+  ["Why we won", "American advantages", "Home ground, motivation (fighting for their own rights), Washington's leadership, French alliance."],
+  ["Why we won", "Why France mattered", "After Saratoga, France sent money, troops and its navy. The French fleet trapped Cornwallis at Yorktown."],
+  ["Why we won", "Effects of the Revolution", "Independence and land to the Mississippi; new ideas of equality, but not yet for women, enslaved people, or Native Americans, who lost land."],
+];
+
+const KEY = "flash.ush2.";
+const ls = {
+  get(k, d) { try { const v = localStorage.getItem(KEY + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(KEY + k, JSON.stringify(v)); } catch {} },
+};
+const $ = (s) => document.querySelector(s);
+const DECKS = ["All", ...new Set(CARDS.map((c) => c[0]))];
+let deck = ls.get("deck", "All"), reverse = ls.get("reverse", false);
+let queue = [], seen = 0, gotFirst = 0, total = 0, flipped = false, missedOnce = new Set();
+
+function cardsFor(d) { return CARDS.map((c, i) => ({ i, cat: c[0], term: c[1], def: c[2] })).filter((c) => d === "All" || c.cat === d); }
+function shuffleArr(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+function start(shuffle = true) {
+  queue = cardsFor(deck); if (shuffle) shuffleArr(queue);
+  total = queue.length; seen = 0; gotFirst = 0; missedOnce = new Set();
+  $("#done").classList.add("hidden"); $("#study").classList.remove("hidden");
+  renderDecks(); show();
+}
+
+function renderDecks() {
+  $("#decks").innerHTML = DECKS.map((d) => `<button aria-pressed="${d === deck}" data-d="${d}">${d} <span style="opacity:.6">${cardsFor(d).length}</span></button>`).join("");
+  $("#decks").querySelectorAll("button").forEach((b) => b.onclick = () => { deck = b.dataset.d; ls.set("deck", deck); start(); });
+}
+
+function show() {
+  const done = total - queue.length;
+  $("#progress").style.width = (total ? 100 * done / total : 0) + "%";
+  $("#left").textContent = `${queue.length} left of ${total}`;
+  $("#score").textContent = seen ? `first-try: ${gotFirst}/${done}` : "";
+  if (!queue.length) {
+    $("#study").classList.add("hidden"); $("#done").classList.remove("hidden");
+    $("#doneMsg").textContent = missedOnce.size ? `You knew ${gotFirst} of ${total} the first time. Run it again to lock in the ${missedOnce.size} you missed.` : `Perfect run: all ${total} first try.`;
+    return;
+  }
+  const c = queue[0];
+  flipped = false; $("#card").classList.remove("flipped");
+  $("#q").textContent = reverse ? c.def : c.term;
+  $("#a").textContent = reverse ? c.term : c.def;
+  $("#q").style.fontSize = reverse ? "19px" : "";
+  $("#a").style.fontSize = reverse ? "26px" : "";
+  $("#a").style.fontWeight = reverse ? "700" : "";
+  $("#tagF").textContent = c.cat;
+  $("#tagB").textContent = `${c.cat} · ${reverse ? "answer" : c.term}`;
+  $("#again").disabled = $("#got").disabled = true;
+}
+
+function flip() {
+  if (!queue.length) return;
+  flipped = !flipped; $("#card").classList.toggle("flipped", flipped);
+  if (flipped) $("#again").disabled = $("#got").disabled = false;
+}
+
+function answer(knew) {
+  if (!flipped || !queue.length) return;
+  const c = queue.shift(); seen++;
+  if (knew) { if (!missedOnce.has(c.i)) gotFirst++; }
+  else { missedOnce.add(c.i); queue.splice(Math.min(3, queue.length), 0, c); }  // comes back in a few cards
+  show();
+}
+
+$("#card").onclick = flip;
+$("#card").onkeydown = (e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); flip(); } };
+$("#got").onclick = () => answer(true);
+$("#again").onclick = () => answer(false);
+document.addEventListener("keydown", (e) => { if (e.key === "ArrowRight") answer(true); if (e.key === "ArrowLeft") answer(false); });
+$("#restart").onclick = () => start();
+$("#shuffle").onclick = () => start();
+$("#reverse").checked = reverse;
+$("#reverse").onchange = (e) => { reverse = e.target.checked; ls.set("reverse", reverse); show(); };
+
+function toast(msg) { const t = $("#toast"); t.textContent = msg; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 2200); }
+$("#quizlet").onclick = async () => {
+  const text = cardsFor(deck).map((c) => `${c.term}\t${c.def}`).join("\n");
+  try { await navigator.clipboard.writeText(text); toast("Copied. In Quizlet: Create → Import → paste."); }
+  catch { prompt("Copy this, then in Quizlet: Create → Import → paste", text); }
+};
+const applyTheme = (t) => { if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; };
+applyTheme(ls.get("theme", null));
+$("#theme").onclick = () => {
+  const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  const next = cur === "dark" ? "light" : "dark"; ls.set("theme", next); applyTheme(next);
+};
+start();
+</script>
+</body>
+</html>
