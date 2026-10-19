@@ -44,10 +44,11 @@ h1 { font-size: 20px; margin: 4px 0 2px; }
 .inner { position: relative; width: 100%; height: 100%; min-height: 300px; transition: transform .45s; transform-style: preserve-3d; }
 .card.flipped .inner { transform: rotateY(180deg); }
 .face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; background: var(--surface);
-  border: 1px solid var(--border); border-radius: 16px; padding: 24px; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; text-align: center; }
+  border: 1px solid var(--border); border-radius: 16px; padding: 16px 20px 36px; display: flex; flex-direction: column;
+  align-items: center; text-align: center; overflow-y: auto; }
+.face > .q, .face > .a { margin: auto 0; }
 .face.back { transform: rotateY(180deg); }
-.tag { position: absolute; top: 14px; left: 16px; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.tag { align-self: flex-start; text-align: left; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 10px; }
 .hint { position: absolute; bottom: 14px; font-size: 13px; color: var(--muted); }
 .front .q { font-size: 26px; font-weight: 700; line-height: 1.25; }
 .back .a { font-size: 19px; line-height: 1.45; }
@@ -112,7 +113,7 @@ const CARDS = [
   ["Timeline", "Sugar Act (1764)", "Tax on molasses and other imports. Accused smugglers tried by a judge with no jury."],
   ["Timeline", "Stamp Act (1765)", "First DIRECT tax on colonists: newspapers, legal papers, playing cards. Leads to boycotts and the Sons of Liberty; repealed 1766."],
   ["Timeline", "Declaratory Act (1766)", "Passed the day the Stamp Act was repealed. Says Parliament can make laws for the colonies \"in all cases whatsoever.\""],
-  ["Timeline", "Townshend Acts (1767)", "Taxes on imported glass, lead, paint, paper and tea. Colonists boycott again."],
+  ["Timeline", "Townshend Duties (Townshend Acts, 1767)", "Taxes on imported glass, lead, paint, paper and tea. Colonists boycott again."],
   ["Timeline", "Boston Massacre", "March 5, 1770. British soldiers fire into a crowd; 5 colonists killed, including Crispus Attucks. Paul Revere's engraving makes it propaganda."],
   ["Timeline", "Tea Act (1773)", "Helps the British East India Company sell tea directly to the colonies. Leads to the Boston Tea Party."],
   ["Timeline", "Boston Tea Party", "Dec 16, 1773. Colonists dump about 18,000 pounds of East India Company tea into Boston Harbor."],
@@ -130,6 +131,11 @@ const CARDS = [
   ["Timeline", "Battle of Yorktown", "Oct 19, 1781. American and French armies trap Cornwallis; the French navy blocks escape by sea. British surrender."],
   ["Timeline", "Treaty of Paris (1783)", "Ends the Revolution. Britain recognizes U.S. independence; borders reach the Mississippi River."],
   // Key terms
+  ["Terms", "Salutary neglect", "Britain's long policy, before 1763, of loosely enforcing its laws and letting the colonies mostly govern themselves. Its end after the French and Indian War angered colonists."],
+  ["Terms", "Revolution", "Overthrowing a government, or a dramatic change in how a country is ruled."],
+  ["Terms", "Militia", "An army of ordinary citizens who train to fight when needed. Minutemen were militia."],
+  ["Terms", "Continental Army", "The colonies' army, created by the Second Continental Congress and led by George Washington."],
+  ["Terms", "Daughters of Liberty", "Women who made the boycotts work by spinning homespun cloth and refusing British tea and goods."],
   ["Terms", "No taxation without representation", "Colonists had no members in Parliament, so they argued Parliament had no right to tax them."],
   ["Terms", "Boycott", "Refusing to buy British goods to pressure Parliament. It got the Stamp Act repealed."],
   ["Terms", "Sons of Liberty", "Secret protest group (Samuel Adams). Led resistance to British taxes and the Boston Tea Party."],
@@ -153,6 +159,8 @@ const CARDS = [
   ["People", "Baron von Steuben", "Prussian officer who trained the Continental Army at Valley Forge."],
   ["People", "Charles Cornwallis", "British general who surrendered at Yorktown in 1781."],
   // Ideas
+  ["Ideas", "Enlightenment", "1600s–1700s movement that used reason to question tradition and absolute monarchy; source of natural rights and government by consent."],
+  ["Ideas", "Absolute monarchy", "A king or queen with unlimited power. Enlightenment thinkers like Locke rejected it."],
   ["Ideas", "John Locke", "Natural rights to life, liberty and property. Government needs the consent of the governed; people may overthrow one that violates their rights."],
   ["Ideas", "Natural rights", "Rights everyone is born with that government can't take away (Locke: life, liberty, property)."],
   ["Ideas", "Consent of the governed", "Government gets its power from the people it governs."],
@@ -165,20 +173,43 @@ const CARDS = [
   ["Why we won", "British advantages", "Strongest army and navy, more money, Loyalist support, hired Hessians."],
   ["Why we won", "American advantages", "Home ground, motivation (fighting for their own rights), Washington's leadership, French alliance."],
   ["Why we won", "Why France mattered", "After Saratoga, France sent money, troops and its navy. The French fleet trapped Cornwallis at Yorktown."],
+  // His 12 key questions
+  ["Questions", "How did the French and Indian War lead to the Revolution?", "Britain won but went deep in debt, so it ended salutary neglect, taxed the colonies, kept troops there, and banned western settlement (Proclamation of 1763)."],
+  ["Questions", "What is a revolution? What was the American Revolution?", "Overthrowing a government. The American Revolution (1775–1783) was the colonies' fight to break from Britain and rule themselves."],
+  ["Questions", "What were the causes of the American Revolution?", "War debt → taxes without representation (Stamp Act, Townshend Duties), Proclamation of 1763, Boston Massacre, Tea Party → Intolerable Acts, Enlightenment ideas, Lexington and Concord."],
+  ["Questions", "What did \"no taxation without representation\" mean?", "Colonists had no elected representatives in Parliament, so Parliament had no right to tax them; only their own assemblies could."],
+  ["Questions", "Sons and Daughters of Liberty: who, and what strategies?", "Sons: boycotts, protests, pressuring tax collectors, propaganda, Boston Tea Party. Daughters: homespun cloth, refusing British tea and goods."],
+  ["Questions", "What were the Intolerable Acts and their purpose?", "1774 laws punishing Boston for the Tea Party (harbor closed, military rule, Quartering Act) to scare colonies into obeying. They united the colonies instead."],
+  ["Questions", "What was the Enlightenment and why did it matter?", "Using reason to question tradition and kings. Locke's natural rights and consent of the governed justified independence and shaped the Declaration."],
+  ["Questions", "What did the Declaration DO and NOT do?", "DID: declare independence, explain why (natural rights), list grievances. Did NOT: win the war, set up a government, or give rights to women, enslaved people or Native Americans."],
+  ["Questions", "How did America win the war?", "Home ground, motivation, Washington's leadership, French alliance after Saratoga (navy at Yorktown), von Steuben and Lafayette, Britain worn down."],
+  ["Questions", "Could they have won without foreign aid? (support it)", "Probably not: after Saratoga, French money, troops and especially the navy trapped Cornwallis at Yorktown. Either side is OK with evidence."],
+  ["Questions", "Economic, social and political effects of the war?", "Economic: debt, inflation, new trade. Social: egalitarianism, Loyalists fled, some Northern states began ending slavery; women, enslaved people, Native Americans left out. Political: independence, state constitutions, Articles of Confederation, a republic."],
+  ["Questions", "Why are 1492 and 1776 significant?", "1492: Columbus reaches the Americas (European contact begins). 1776: Declaration of Independence."],
   ["Why we won", "Effects of the Revolution", "Independence and land to the Mississippi; new ideas of equality, but not yet for women, enslaved people, or Native Americans, who lost land."],
 ];
 
-const KEY = "flash.ush2.";
+// The teacher's 29 key terms, as these cards name them
+const STARRED = new Set(["Salutary neglect", "Proclamation of 1763", "Stamp Act (1765)", "Townshend Duties (Townshend Acts, 1767)",
+  "Boston Massacre", "Boston Tea Party", "First Continental Congress", "Olive Branch Petition", "Lexington and Concord", "Common Sense",
+  "Enlightenment", "John Locke", "Natural rights", "King George III", "Absolute monarchy", "Thomas Jefferson", "Declaration of Independence",
+  "Revolution", "George Washington", "Battle of Bunker Hill", "Militia", "Minutemen", "Continental Army", "Patriots", "Loyalists (Tories)",
+  "Battle of Saratoga", "Valley Forge", "Battle of Yorktown", "Treaty of Paris (1783)"]);
+const STAR_DECK = "⭐ His list";
+const KEY = "flash.ush2b.";
 const ls = {
   get(k, d) { try { const v = localStorage.getItem(KEY + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem(KEY + k, JSON.stringify(v)); } catch {} },
 };
 const $ = (s) => document.querySelector(s);
-const DECKS = ["All", ...new Set(CARDS.map((c) => c[0]))];
-let deck = ls.get("deck", "All"), reverse = ls.get("reverse", false);
+const DECKS = [STAR_DECK, "Questions", "All", ...[...new Set(CARDS.map((c) => c[0]))].filter((d) => d !== "Questions")];
+let deck = ls.get("deck", STAR_DECK), reverse = ls.get("reverse", false);
 let queue = [], seen = 0, gotFirst = 0, total = 0, flipped = false, missedOnce = new Set();
 
-function cardsFor(d) { return CARDS.map((c, i) => ({ i, cat: c[0], term: c[1], def: c[2] })).filter((c) => d === "All" || c.cat === d); }
+function cardsFor(d) {
+  return CARDS.map((c, i) => ({ i, cat: c[0], term: c[1], def: c[2], star: STARRED.has(c[1]) }))
+    .filter((c) => d === "All" || (d === STAR_DECK ? c.star : c.cat === d));
+}
 function shuffleArr(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 
 function start(shuffle = true) {
@@ -207,10 +238,11 @@ function show() {
   flipped = false; $("#card").classList.remove("flipped");
   $("#q").textContent = reverse ? c.def : c.term;
   $("#a").textContent = reverse ? c.term : c.def;
-  $("#q").style.fontSize = reverse ? "19px" : "";
-  $("#a").style.fontSize = reverse ? "26px" : "";
+  const fit = (s, big) => s.length > 260 ? "16px" : s.length > 160 ? "17px" : big;
+  $("#q").style.fontSize = reverse ? fit(c.def, "19px") : (c.term.length > 50 ? "21px" : "");
+  $("#a").style.fontSize = reverse ? "26px" : fit(c.def, "");
   $("#a").style.fontWeight = reverse ? "700" : "";
-  $("#tagF").textContent = c.cat;
+  $("#tagF").textContent = (c.star ? "⭐ " : "") + c.cat;
   $("#tagB").textContent = `${c.cat} · ${reverse ? "answer" : c.term}`;
   $("#again").disabled = $("#got").disabled = true;
 }
