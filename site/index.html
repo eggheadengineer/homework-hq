@@ -415,6 +415,17 @@ function buildPlan(x) {
   return plan;
 }
 
+// Temporary study tools. Each one hides itself after its `until` date (local), no cleanup needed.
+const STUDY_LINKS = [
+  { title: "🃏 US History flashcards", sub: "American Revolution test, Tue Oct 20. Tap to flip, works on your phone.",
+    url: "flashcards/us-history-unit2.html", until: "2026-10-20" },
+];
+function studyCard() {
+  const live = STUDY_LINKS.filter((s) => todayKey() <= s.until);
+  return live.map((s) => `<div class="card recovery"><div class="title">${esc(s.title)}</div>
+    <div class="meta">${esc(s.sub)}</div><a class="btn" href="${esc(s.url)}">Study now</a></div>`).join("");
+}
+
 function calendarCard() {
   const c = D.calendar; if (!c) return "";
   const webcal = c.ics ? c.ics.replace(/^https:/, "webcal:") : null;
@@ -475,7 +486,7 @@ function annCard(a) {
 }
 
 function viewToday(x) {
-  let h = calendarCard() + planCard(x) + tomorrowCard(x);
+  let h = studyCard() + calendarCard() + planCard(x) + tomorrowCard(x);
   const recentAnn = relevantAnn(14);
   if (recentAnn.length) h += `<h2>📣 Unread from teachers</h2><p class="hint">Teachers post instructions here: where to upload, what's on the test, what to print.</p>` + recentAnn.map(annCard).join("");
   h += `<h2>🚨 Fix these first</h2><p class="hint">Missing work as recorded in the teachers' gradebooks (Blackbaud), biggest grade boost first. Canvas-only flags are marked. The green number is the real class grade if it's turned in for full credit. Ask the teacher about late credit.</p>`;
