@@ -389,7 +389,7 @@ function renderHeader(x) {
 }
 
 const TABS = [
-  ["today", "Today"], ["week", "Next 2 weeks"], ["grades", "Grades"], ["feedback", "Teacher notes"],
+  ["today", "Today"], ["week", "Next 2 weeks"], ["grades", "Grades"], ["report", "Report card"], ["feedback", "Teacher notes"],
 ];
 
 const isSchoolWide = (a) => !D.courses.some((c) => c.official && same(c.name, a.course));
@@ -618,6 +618,47 @@ function habits(x) {
     + `</div>`;
 }
 
+function viewReport() {
+  const mps = D.official?.markingPeriods || [];
+  const report = D.official?.report || [];
+  if (!mps.length) return `<h2>Report card</h2><div class="empty">Quarter grades appear here once the gradebook sync has run.</div>`;
+  const cur = mps.find((m) => m.current);
+  // Rows: every course that has a quarter grade, plus this quarter's classes.
+  const names = [];
+  const add = (n) => { if (n && !names.some((x) => same(x, n))) names.push(n); };
+  report.forEach((r) => r.grades.forEach((g) => add(g.course)));
+  D.courses.filter((c) => c.official).forEach((c) => add(c.official.name));
+  const gradeFor = (m, name) => {
+    if (m.current) { const c = D.courses.find((c) => c.official && same(c.official.name, name)); return c?.official?.grade ?? null; }
+    return report.find((r) => r.id === m.id)?.grades.find((g) => same(g.course, name))?.grade ?? null;
+  };
+  const cell = (m, name, prev) => {
+    const done = report.some((r) => r.id === m.id) && !m.current;
+    if (!done && !m.current) return `<td class="num meta">—</td>`;
+    const g = gradeFor(m, name);
+    if (g == null) return `<td class="num meta">${m.current ? "no grades yet" : "—"}</td>`;
+    const b = band(g), d = prev != null ? g - prev : null;
+    const arrow = d == null || Math.abs(d) < 0.5 ? "" : `<div class="meta">${d > 0 ? "▲" : "▼"} ${Math.abs(d).toFixed(1)}</div>`;
+    return `<td class="num"><span class="chip ${b.cls}" style="font-size:14px">${g.toFixed(1)}%</span>${m.current ? `<div class="meta">so far</div>` : ""}${arrow}</td>`;
+  };
+  const finished = report.filter((r) => !r.current && r.grades.length);
+  const last = finished.at(-1);
+  let h = `<h2>Report card</h2><p class="hint">Each quarter's final grade from the school gradebook, and the current quarter so far. Finished quarters never change here, so you can see the trend.</p>`;
+  if (last) {
+    const gs = last.grades.filter((g) => g.grade != null);
+    const low = gs.filter((g) => g.grade < 70), lowest = gs.slice().sort((a, b) => a.grade - b.grade)[0];
+    h += `<div class="card ${low.length ? "missing" : "recovery"}"><div class="title">${esc(last.title)} final: ${low.length ? `${low.length} class${low.length > 1 ? "es" : ""} under 70%` : `all ${gs.length} classes at 70% or above`}</div>
+      <div class="meta">Lowest: ${esc(lowest.course)} ${lowest.grade.toFixed(1)}%. ${gs.filter((g) => g.grade >= 80).length} of ${gs.length} at 80% or above.</div></div>`;
+  }
+  h += `<div class="card" style="overflow-x:auto"><table><thead><tr><th>Class</th>${mps.map((m) => `<th style="text-align:right">${esc(m.title.replace("Quarter ", "Q"))}${m.current ? " ·now" : ""}</th>`).join("")}</tr></thead><tbody>`;
+  for (const name of names) {
+    let prev = null;
+    h += `<tr><td>${esc(name)}</td>` + mps.map((m) => { const html = cell(m, name, prev); const g = (report.some((r) => r.id === m.id) || m.current) ? gradeFor(m, name) : null; if (g != null) prev = g; return html; }).join("") + `</tr>`;
+  }
+  h += `</tbody></table></div><p class="hint">Quarter grades are the gradebook's running averages. The official report card may also include semester exams or rounding. Second-semester classes appear as new rows when they start.</p>`;
+  return h;
+}
+
 function viewFeedback() {
   let h = (D.announcements || []).length ? `<h2>Announcements (last 3 weeks)</h2>` + D.announcements.map(annCard).join("") : "";
   h += `<h2>Teacher notes</h2><p class="hint">Comments teachers left on assignments, newest first. They often say exactly what to fix.</p>`;
@@ -644,7 +685,7 @@ function render() {
   $("#tabs").innerHTML = TABS.map(([k, l]) => `<button role="tab" data-tab="${k}" aria-selected="${k === tab}">${l}${k === "today" && x.open.length ? `<span class="count">${x.open.length}</span>` : ""}</button>`).join("");
   $("#tabs").querySelectorAll("button").forEach((b) => b.onclick = () => { ls.set(LS_TAB, b.dataset.tab); render(); window.scrollTo({ top: 0 }); });
   for (const k in chartData) delete chartData[k];
-  $("#view").innerHTML = { today: viewToday, week: viewWeek, grades: viewGrades, feedback: viewFeedback }[tab](x);
+  $("#view").innerHTML = { today: viewToday, week: viewWeek, grades: viewGrades, report: viewReport, feedback: viewFeedback }[tab](x);
   wireCharts($("#view")); wirePlan($("#view"));
 }
 

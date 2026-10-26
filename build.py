@@ -156,6 +156,11 @@ def build(cv: Canvas, now: datetime):
             break
     periods = [{"title": g["title"], "start": dt(g["start_date"]), "end": dt(g["end_date"])} for g in periods]
     quarter = next((g for g in periods if g["start"] <= now <= g["end"]), None)
+    if quarter is None:
+        # Between quarters (e.g. a teacher day): use the one starting within a week, else the last one.
+        upcoming = [g for g in periods if now < g["start"] <= now + timedelta(days=7)]
+        past = [g for g in periods if g["end"] < now]
+        quarter = min(upcoming, key=lambda g: g["start"]) if upcoming else (max(past, key=lambda g: g["end"]) if past else None)
     year_start = min((g["start"] for g in periods), default=now - timedelta(days=60))
 
     planner = {}
@@ -325,7 +330,7 @@ def loose_twin(canvas_item, gb_item):
 
 def merge_official(data, bb):
     """Attach Blackbaud grades to Canvas courses and build one missing-work list from both."""
-    data["official"] = {k: bb.get(k) for k in ("fetched_at", "quarter", "absences", "conduct", "schedule")}
+    data["official"] = {k: bb.get(k) for k in ("fetched_at", "quarter", "absences", "conduct", "schedule", "report", "markingPeriods")}
     # The Mac only pushes blackbaud.enc when grades change; it passes its latest check time on dispatch.
     data["official"]["checked_at"] = max(filter(None, [bb.get("fetched_at"), os.environ.get("BB_CHECKED")]), default=None)
     sections = bb.get("sections") or []
