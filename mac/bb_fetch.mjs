@@ -183,32 +183,58 @@ function schoolYearLabel(d = new Date()) {
 async function collect(page) {
   const Y = encodeURIComponent(schoolYearLabel());
   const terms = await apiGet(page, `/api/DataDirect/StudentGroupTermList/?studentUserId=${SID}&schoolYearLabel=${Y}&personaId=1`);
-  const current = terms.filter((t) => t.CurrentInd === 1).map((t) => t.DurationId);
-  const groups = await apiGet(page, `/api/datadirect/ParentStudentUserAcademicGroupsGet?userId=${SID}&schoolYearLabel=${Y}&memberLevel=3&persona=1&durationList=${current.join(",")}&markingPeriodId=`);
-  const graded = groups.filter((g) => g.markingperiodid);
+  // Every duration of the year (semesters + full year), so finished quarters stay reachable
+  // after the semester changes over.
+  const durations = terms.map((t) => t.DurationId);
+  const groupsFor = (mp) => apiGet(page, `/api/datadirect/ParentStudentUserAcademicGroupsGet?userId=${SID}&schoolYearLabel=${Y}&memberLevel=3&persona=1&durationList=${durations.join(",")}&markingPeriodId=${mp}`);
+  const isClass = (g) => !/^(lunch|homeroom)\b/i.test(g.sectionidentifier || "");
+  const groups = (await groupsFor("")).filter(isClass);
+  const clean = (s) => s.replace(/\s*-\s*\d+\s*\(.*\)$/, "").replace(/\s*-\s*PLTW$/, "");
 
-  let quarter = null;
-  try {
-    const ds = encodeURIComponent(JSON.stringify(terms.filter((t) => current.includes(t.DurationId)).map((t) => ({
-      DurationId: t.DurationId, LeadSectionList: graded.filter((g) => g.DurationId === t.DurationId).map((g) => ({ LeadSectionId: g.leadsectionid })),
-    })).filter((d) => d.LeadSectionList.length)));
-    const mps = await apiGet(page, `/api/gradebook/GradeBookMyDayMarkingPeriods?durationSectionList=${ds}&userId=${SID}&personaId=1`);
-    const mp = mps.find((m) => m.CurrentMarkingPeriod);
-    if (mp) quarter = { id: mp.MarkingPeriodId, title: mp.MarkingPeriodDescription };
-  } catch (e) { log("marking periods:", e.message); }
+  // Marking periods per duration. Asking with a blank marking period only works while the
+  // current quarter has grades; on the first day of a quarter it returns nothing, so always
+  // ask for each quarter by id.
+  const markingPeriods = [];
+  for (const t of terms) {
+    const lead = groups.filter((g) => g.DurationId === t.DurationId).map((g) => ({ LeadSectionId: g.leadsectionid }));
+    if (!lead.length) continue;
+    try {
+      const ds = encodeURIComponent(JSON.stringify([{ DurationId: t.DurationId, LeadSectionList: lead }]));
+      for (const m of await apiGet(page, `/api/gradebook/GradeBookMyDayMarkingPeriods?durationSectionList=${ds}&userId=${SID}&personaId=1`))
+        if (!markingPeriods.some((x) => x.id === m.MarkingPeriodId))
+          markingPeriods.push({ id: m.MarkingPeriodId, title: m.MarkingPeriodDescription, current: !!m.CurrentMarkingPeriod, duration: t.DurationDescription });
+    } catch (e) { log("marking periods:", e.message); }
+  }
+  markingPeriods.sort((a, b) => a.id - b.id);
+  const cur = markingPeriods.find((m) => m.current) || markingPeriods.at(-1) || null;
+  const quarter = cur ? { id: cur.id, title: cur.title } : null;
 
+  // Report card: each quarter up to the current one, graded by course name (sections change
+  // between semesters, course names don't).
+  const report = [];
+  const byMp = {};
+  for (const m of markingPeriods) {
+    if (cur && m.id > cur.id) break;
+    const rows = (await groupsFor(m.id)).filter(isClass);
+    byMp[m.id] = rows;
+    report.push({ id: m.id, title: m.title, current: m.id === cur?.id,
+      grades: rows.filter((g) => g.markingperiodid === m.id).map((g) => ({ course: clean(g.sectionidentifier), grade: g.cumgrade != null ? +g.cumgrade : null })) });
+  }
+
+  // Live detail for the current quarter: every class, even before any grade is posted.
   const sections = [];
-  for (const g of graded) {
-    const rows = await apiGet(page, `/api/gradebook/AssignmentPerformanceStudent?sectionId=${g.sectionid}&markingPeriodId=${g.markingperiodid}&studentId=${SID}`);
+  const curRows = cur ? byMp[cur.id] || [] : groups;
+  for (const g of curRows) {
+    const rows = cur ? await apiGet(page, `/api/gradebook/AssignmentPerformanceStudent?sectionId=${g.sectionid}&markingPeriodId=${cur.id}&studentId=${SID}`).catch(() => []) : [];
     const categories = {};
     for (const r of rows) categories[r.AssignmentType] ??= { name: r.AssignmentType, avg: parseFloat(r.Percentage) || null, weight: r.Weight ?? null, n: 0 };
     rows.forEach((r) => categories[r.AssignmentType].n++);
     sections.push({
       id: g.sectionid,
-      name: g.sectionidentifier.replace(/\s*-\s*\d+\s*\(.*\)$/, "").replace(/\s*-\s*PLTW$/, ""),
+      name: clean(g.sectionidentifier),
       period: (/\((.*)\)$/.exec(g.sectionidentifier) || [])[1] || "",
       teacher: g.groupownername, email: g.groupowneremail, room: g.room,
-      grade: g.cumgrade != null ? +g.cumgrade : null,
+      grade: g.cumgrade != null && g.markingperiodid === cur?.id ? +g.cumgrade : null,
       total: rows[0] ? { points: rows[0].TotalPoints, max: rows[0].TotalMaxPoints } : null,
       categories: Object.values(categories),
       assignments: rows.map((r) => ({
@@ -252,7 +278,7 @@ async function collect(page) {
     } catch (e) { log("schedule:", e.message); }
   }
 
-  return { quarter, sections, absences, conduct, schedule };
+  return { quarter, markingPeriods, report, sections, absences, conduct, schedule };
 }
 
 /* ---------------- encrypt + publish ---------------- */
