@@ -202,7 +202,7 @@ async function collect(page) {
       const ds = encodeURIComponent(JSON.stringify([{ DurationId: t.DurationId, LeadSectionList: lead }]));
       for (const m of await apiGet(page, `/api/gradebook/GradeBookMyDayMarkingPeriods?durationSectionList=${ds}&userId=${SID}&personaId=1`))
         if (!markingPeriods.some((x) => x.id === m.MarkingPeriodId))
-          markingPeriods.push({ id: m.MarkingPeriodId, title: m.MarkingPeriodDescription, current: !!m.CurrentMarkingPeriod, duration: t.DurationDescription });
+          markingPeriods.push({ id: m.MarkingPeriodId, title: m.MarkingPeriodDescription, current: !!m.CurrentMarkingPeriod, duration: t.DurationDescription, durationId: t.DurationId });
     } catch (e) { log("marking periods:", e.message); }
   }
   markingPeriods.sort((a, b) => a.id - b.id);
@@ -223,7 +223,10 @@ async function collect(page) {
 
   // Live detail for the current quarter: every class, even before any grade is posted.
   const sections = [];
-  const curRows = cur ? byMp[cur.id] || [] : groups;
+  // Only this semester's sections (plus any full-year ones); next semester's are listed too.
+  const fullYear = terms.filter((t) => t.OfferingType === 3).map((t) => t.DurationId);
+  const inTerm = (g) => !cur || g.DurationId === cur.durationId || fullYear.includes(g.DurationId);
+  const curRows = (cur ? byMp[cur.id] || [] : groups).filter(inTerm);
   for (const g of curRows) {
     const rows = cur ? await apiGet(page, `/api/gradebook/AssignmentPerformanceStudent?sectionId=${g.sectionid}&markingPeriodId=${cur.id}&studentId=${SID}`).catch(() => []) : [];
     const categories = {};
