@@ -389,7 +389,7 @@ function renderHeader(x) {
 }
 
 const TABS = [
-  ["today", "Today"], ["week", "Next 2 weeks"], ["grades", "Grades"], ["report", "Report card"], ["feedback", "Teacher notes"],
+  ["today", "Today"], ["week", "Next 2 weeks"], ["grades", "Grades"], ["report", "Report card"], ["changes", "Changes"], ["feedback", "Teacher notes"],
 ];
 
 const isSchoolWide = (a) => !D.courses.some((c) => c.official && same(c.name, a.course));
@@ -659,6 +659,29 @@ function viewReport() {
   return h;
 }
 
+// Every edit teachers make to the gradebook, found by comparing it every 30 minutes.
+function viewChanges() {
+  const ev = (D.official?.changes || []).slice().reverse();
+  let h = `<h2>Gradebook changes</h2><p class="hint">Every change teachers make in the school gradebook, for every quarter so far, checked every 30 minutes. Red ones need a look: work removed or moved to another quarter, a score lowered, or a change to a quarter that has already ended.</p>`;
+  if (!ev.length) return h + `<div class="empty">No changes recorded yet.</div>`;
+  const flagged = ev.filter((e) => e.flag);
+  if (flagged.length) h += `<div class="card missing"><div class="title">${flagged.length} change${flagged.length > 1 ? "s" : ""} to check</div><div class="meta">${esc([...new Set(flagged.map((e) => e.course))].join(", "))}</div></div>`;
+  const label = { removed: "Removed", moved: "Moved", added: "Added", changed: "Changed", grade: "Grade" };
+  let day = null;
+  for (const e of ev) {
+    const d = dayKey(e.at);
+    if (d !== day) { day = d; h += `<h3 style="font-size:15px;margin:16px 0 6px">${fmtDay(e.at)}</h3>`; }
+    const q = (e.quarter || "").replace("Quarter ", "Q");
+    const cls = e.kind === "grade" ? (e.to < e.from ? "critical" : "good") : e.flag ? "critical" : "info";
+    h += `<div class="card ${e.flag ? "missing" : ""}"><div class="row"><div>
+      <div class="title">${esc(e.course)}${q ? ` · ${esc(q)}` : ""}: ${esc(e.name)}</div>
+      <div class="meta">${esc(e.detail)}</div>
+      <div class="meta">Changed between ${fmtDay(e.since)} ${fmtTime(e.since)} and ${fmtDay(e.at)} ${fmtTime(e.at)}${e.pastQuarter ? " · quarter already ended" : ""}</div>
+      </div><span class="chip ${cls}">${label[e.kind] || esc(e.kind)}</span></div></div>`;
+  }
+  return h;
+}
+
 function viewFeedback() {
   let h = (D.announcements || []).length ? `<h2>Announcements (last 3 weeks)</h2>` + D.announcements.map(annCard).join("") : "";
   h += `<h2>Teacher notes</h2><p class="hint">Comments teachers left on assignments, newest first. They often say exactly what to fix.</p>`;
@@ -685,7 +708,7 @@ function render() {
   $("#tabs").innerHTML = TABS.map(([k, l]) => `<button role="tab" data-tab="${k}" aria-selected="${k === tab}">${l}${k === "today" && x.open.length ? `<span class="count">${x.open.length}</span>` : ""}</button>`).join("");
   $("#tabs").querySelectorAll("button").forEach((b) => b.onclick = () => { ls.set(LS_TAB, b.dataset.tab); render(); window.scrollTo({ top: 0 }); });
   for (const k in chartData) delete chartData[k];
-  $("#view").innerHTML = { today: viewToday, week: viewWeek, grades: viewGrades, report: viewReport, feedback: viewFeedback }[tab](x);
+  $("#view").innerHTML = { today: viewToday, week: viewWeek, grades: viewGrades, report: viewReport, changes: viewChanges, feedback: viewFeedback }[tab](x);
   wireCharts($("#view")); wirePlan($("#view"));
 }
 

@@ -19,6 +19,9 @@ const HOME = homedir();
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..");
 const CONF_DIR = join(HOME, ".config/homework-hq");
 const STATE = join(CONF_DIR, "bb-state.json");
+const GB_SNAPSHOT = join(CONF_DIR, "bb-gradebook.json");   // last full gradebook, for change detection
+const GB_CHANGES = join(CONF_DIR, "bb-changes.json");      // append-only change log
+const GB_DAILY = join(CONF_DIR, "gradebook-snapshots");    // one dated copy per day, kept as a record
 const PROFILE = join(HOME, ".homework-hq-chrome");
 const PORT = 9335;
 const KDF_ITERATIONS = 600_000; // must match build.py / index.html
@@ -213,6 +216,9 @@ async function collect(page) {
   // between semesters, course names don't).
   const report = [];
   const byMp = {};
+  const rowCache = {};
+  const rowsFor = async (mp, sec) => (rowCache[`${mp}|${sec}`] ??= await apiGet(page,
+    `/api/gradebook/AssignmentPerformanceStudent?sectionId=${sec}&markingPeriodId=${mp}&studentId=${SID}`).catch((e) => { log("gradebook:", e.message); return null; }));
   for (const m of markingPeriods) {
     if (cur && m.id > cur.id) break;
     const rows = (await groupsFor(m.id)).filter(isClass);
@@ -228,7 +234,7 @@ async function collect(page) {
   const inTerm = (g) => !cur || g.DurationId === cur.durationId || fullYear.includes(g.DurationId);
   const curRows = (cur ? byMp[cur.id] || [] : groups).filter(inTerm);
   for (const g of curRows) {
-    const rows = cur ? await apiGet(page, `/api/gradebook/AssignmentPerformanceStudent?sectionId=${g.sectionid}&markingPeriodId=${cur.id}&studentId=${SID}`).catch(() => []) : [];
+    const rows = (cur ? await rowsFor(cur.id, g.sectionid) : null) || [];
     const categories = {};
     for (const r of rows) categories[r.AssignmentType] ??= { name: r.AssignmentType, avg: parseFloat(r.Percentage) || null, weight: r.Weight ?? null, n: 0 };
     rows.forEach((r) => categories[r.AssignmentType].n++);
@@ -281,7 +287,107 @@ async function collect(page) {
     } catch (e) { log("schedule:", e.message); }
   }
 
-  return { quarter, markingPeriods, report, sections, absences, conduct, schedule };
+  // Full gradebook of every quarter so far (teachers keep editing finished quarters until
+  // grades close), for change tracking. A section whose fetch failed is marked so its
+  // assignments are not reported as removed.
+  const gradebook = { taken_at: new Date().toISOString(), mps: [], titles: {}, rows: {}, grades: {}, failed: [] };
+  for (const m of markingPeriods) {
+    if (cur && m.id > cur.id) break;
+    gradebook.mps.push(m.id);
+    gradebook.titles[m.id] = m.title;
+    for (const g of (byMp[m.id] || []).filter((g) => g.markingperiodid === m.id)) {
+      const course = clean(g.sectionidentifier);
+      if (g.cumgrade != null) gradebook.grades[`${m.id}|${course}`] = +g.cumgrade;
+      const rows = await rowsFor(m.id, g.sectionid);
+      if (!rows) { gradebook.failed.push(`${m.id}|${g.sectionid}`); continue; }
+      for (const r of rows) gradebook.rows[`${m.id}|${g.sectionid}|${r.AssignmentId ?? r.AssignmentIndexId}`] = {
+        mp: m.id, quarter: m.title, course, id: r.AssignmentId ?? r.AssignmentIndexId, name: text(r.AssignmentShortDescription),
+        type: r.AssignmentType, due: isoLocal(r.DateDue)?.slice(0, 10) || null,
+        points: r.Points == null || r.Points === "" ? null : +r.Points, max: r.MaxPoints, missing: !!r.Missing, late: !!r.Late,
+        exempt: !!r.Exempt, counts: r.IncludeCumulativeGrade !== false, extra: !!r.ExtraCredit, comment: text(r.Comment),
+      };
+    }
+  }
+
+  return { quarter, markingPeriods, report, sections, absences, conduct, schedule, gradebook, curMp: cur?.id ?? null };
+}
+
+/* ---------------- gradebook change tracking ---------------- */
+const readJson = (f, dflt) => { try { return JSON.parse(readFileSync(f, "utf8")); } catch { return dflt; } };
+const pts = (r) => r.points == null ? "no score" : `${r.points}/${r.max}`;
+
+// Compare two gradebook snapshots. Only quarters (and sections) present and fetched in both
+// are compared, so a new quarter or a failed fetch is a silent baseline, never "removed".
+function diffGradebook(prev, next, curMp, removedLog) {
+  const ev = [];
+  const window = { since: prev.taken_at, at: next.taken_at };
+  const comparable = (k) => { const [mp, sec] = k.split("|"); return prev.mps.includes(+mp) && next.mps.includes(+mp)
+    && !(prev.failed || []).includes(`${mp}|${sec}`) && !next.failed.includes(`${mp}|${sec}`); };
+  const add = (e) => ev.push({ ...window, pastQuarter: e.mp !== curMp, ...e });
+  const byId = (rows) => { const m = {}; for (const [k, r] of Object.entries(rows)) (m[r.id] ??= []).push(k); return m; };
+  const nextIds = byId(next.rows), prevIds = byId(prev.rows);
+
+  for (const [k, r] of Object.entries(prev.rows)) {
+    if (next.rows[k] || !comparable(k)) continue;
+    const elsewhere = (nextIds[r.id] || []).map((x) => next.rows[x]).find((x) => x.mp !== r.mp);
+    if (elsewhere) add({ kind: "moved", flag: true, mp: r.mp, quarter: r.quarter, course: r.course, name: r.name,
+      detail: `moved from ${r.quarter} to ${elsewhere.quarter} (${pts(r)})` });
+    else {
+      add({ kind: "removed", flag: true, mp: r.mp, quarter: r.quarter, course: r.course, name: r.name,
+        detail: `removed from ${r.quarter} (was ${pts(r)}, ${r.type}, due ${r.due})` });
+      removedLog[r.id] = { quarter: r.quarter, at: next.taken_at };
+    }
+  }
+  for (const [k, r] of Object.entries(next.rows)) {
+    const o = prev.rows[k];
+    if (!o) {
+      if (!comparable(k) || (prevIds[r.id] || []).some((x) => prev.rows[x].mp !== r.mp && !next.rows[x])) continue; // moved: reported above
+      const back = removedLog[r.id];
+      if (back) { delete removedLog[r.id]; add({ kind: "moved", flag: true, mp: r.mp, quarter: r.quarter, course: r.course, name: r.name,
+        detail: `added to ${r.quarter} (${pts(r)}); it was removed from ${back.quarter} on ${back.at.slice(0, 10)}` }); }
+      else add({ kind: "added", flag: r.mp !== curMp, mp: r.mp, quarter: r.quarter, course: r.course, name: r.name,
+        detail: `new in ${r.quarter}: ${pts(r)}${r.missing ? ", marked missing" : ""}` });
+      continue;
+    }
+    const d = [];
+    let flag = r.mp !== curMp;
+    if (o.points !== r.points) { d.push(`score ${pts(o)} → ${pts(r)}`); if (o.points != null && (r.points == null || r.points < o.points)) flag = true; }
+    else if (o.max !== r.max) { d.push(`out of ${o.max} → ${r.max}`); flag = true; }
+    if (o.missing !== r.missing) { d.push(r.missing ? "marked missing" : "no longer missing"); if (r.missing) flag = true; }
+    if (o.exempt !== r.exempt) { d.push(r.exempt ? "exempted" : "no longer exempt"); flag = true; }
+    if (o.counts !== r.counts) { d.push(r.counts ? "now counts toward the grade" : "no longer counts toward the grade"); flag = true; }
+    if (o.late !== r.late) d.push(r.late ? "marked late" : "no longer late");
+    if (o.type !== r.type) { d.push(`category ${o.type} → ${r.type}`); flag = true; }
+    if (o.name !== r.name) d.push(`renamed from "${o.name}"`);
+    if (o.comment !== r.comment && r.comment) d.push(`teacher comment: "${r.comment.slice(0, 160)}"`);
+    if (d.length) add({ kind: "changed", flag, mp: r.mp, quarter: r.quarter, course: r.course, name: r.name, detail: d.join("; ") });
+  }
+  for (const [k, g] of Object.entries(next.grades)) {
+    const o = prev.grades[k], [mp, course] = [+k.split("|")[0], k.split("|").slice(1).join("|")];
+    if (o == null || !prev.mps.includes(mp) || Math.abs(o - g) < 0.005) continue;
+    add({ kind: "grade", flag: mp !== curMp || g < o, mp, quarter: next.titles[mp] || "",
+      course, name: "Quarter grade", from: o, to: g, detail: `${o.toFixed(2)}% → ${g.toFixed(2)}%` });
+  }
+  return ev;
+}
+
+async function trackGradebook(gb, curMp) {
+  mkdirSync(GB_DAILY, { recursive: true });
+  const day = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  writeFileSync(join(GB_DAILY, `${day}.json`), JSON.stringify(gb)); // latest of the day
+  const prev = readJson(GB_SNAPSHOT, null);
+  const log_ = readJson(GB_CHANGES, { events: [], removed: {} });
+  const ev = prev ? diffGradebook(prev, gb, curMp, log_.removed) : [];
+  writeFileSync(GB_SNAPSHOT, JSON.stringify(gb));
+  if (ev.length) {
+    log_.events.push(...ev);
+    writeFileSync(GB_CHANGES, JSON.stringify(log_, null, 1));
+    log(`gradebook changes: ${ev.length} (${ev.filter((e) => e.flag).length} flagged)`);
+    const flagged = ev.filter((e) => e.flag);
+    if (flagged.length) await notify(`Gradebook changed: ${[...new Set(flagged.map((e) => e.course))].join(", ")}`,
+      flagged.slice(0, 8).map((e) => `${e.course} (${e.quarter.replace("Quarter ", "Q")}): ${e.name}: ${e.detail}`).join("\n").slice(0, 1500));
+  }
+  return log_.events.slice(-400);
 }
 
 /* ---------------- encrypt + publish ---------------- */
@@ -340,7 +446,8 @@ async function main() {
       }
     }
     state.loginAlert = 0;
-    const data = await collect(page);
+    const { gradebook, curMp, ...data } = await collect(page);
+    data.changes = await trackGradebook(gradebook, curMp);
     log(`sections=${data.sections.length} assignments=${data.sections.reduce((n, s) => n + s.assignments.length, 0)} absences=${data.absences.length}`);
     const checkedAt = new Date().toISOString();
     if (!(await publish(data))) dispatch(checkedAt); // a push already triggers a rebuild
