@@ -331,7 +331,7 @@ function diffGradebook(prev, next, curMp, removedLog) {
     if (next.rows[k] || !comparable(k)) continue;
     const elsewhere = (nextIds[r.id] || []).map((x) => next.rows[x]).find((x) => x.mp !== r.mp);
     if (elsewhere) add({ kind: "moved", flag: true, mp: r.mp, quarter: r.quarter, course: r.course, name: r.name,
-      detail: `moved from ${r.quarter} to ${elsewhere.quarter} (${pts(r)})` });
+      detail: `moved from ${r.quarter} to ${elsewhere.quarter} (${pts(r)})${elsewhere.due !== r.due ? `; due date changed ${r.due} → ${elsewhere.due}` : ""}` });
     else {
       add({ kind: "removed", flag: true, mp: r.mp, quarter: r.quarter, course: r.course, name: r.name,
         detail: `removed from ${r.quarter} (was ${pts(r)}, ${r.type}, due ${r.due})` });
@@ -345,18 +345,19 @@ function diffGradebook(prev, next, curMp, removedLog) {
       const back = removedLog[r.id];
       if (back) { delete removedLog[r.id]; add({ kind: "moved", flag: true, mp: r.mp, quarter: r.quarter, course: r.course, name: r.name,
         detail: `added to ${r.quarter} (${pts(r)}); it was removed from ${back.quarter} on ${back.at.slice(0, 10)}` }); }
-      else add({ kind: "added", flag: r.mp !== curMp, mp: r.mp, quarter: r.quarter, course: r.course, name: r.name,
+      else add({ kind: "added", flag: r.missing, mp: r.mp, quarter: r.quarter, course: r.course, name: r.name,
         detail: `new in ${r.quarter}: ${pts(r)}${r.missing ? ", marked missing" : ""}` });
       continue;
     }
     const d = [];
-    let flag = r.mp !== curMp;
+    let flag = false; // only changes that can hurt the grade get flagged
     if (o.points !== r.points) { d.push(`score ${pts(o)} → ${pts(r)}`); if (o.points != null && (r.points == null || r.points < o.points)) flag = true; }
     else if (o.max !== r.max) { d.push(`out of ${o.max} → ${r.max}`); flag = true; }
     if (o.missing !== r.missing) { d.push(r.missing ? "marked missing" : "no longer missing"); if (r.missing) flag = true; }
-    if (o.exempt !== r.exempt) { d.push(r.exempt ? "exempted" : "no longer exempt"); flag = true; }
-    if (o.counts !== r.counts) { d.push(r.counts ? "now counts toward the grade" : "no longer counts toward the grade"); flag = true; }
+    if (o.exempt !== r.exempt) { d.push(r.exempt ? "exempted" : "no longer exempt"); if (!r.exempt) flag = true; }
+    if (o.counts !== r.counts) { d.push(r.counts ? "now counts toward the grade" : "no longer counts toward the grade"); if (!r.counts && r.points) flag = true; }
     if (o.late !== r.late) d.push(r.late ? "marked late" : "no longer late");
+    if (o.due !== r.due) { d.push(`due date ${o.due} → ${r.due}`); flag = true; }
     if (o.type !== r.type) { d.push(`category ${o.type} → ${r.type}`); flag = true; }
     if (o.name !== r.name) d.push(`renamed from "${o.name}"`);
     if (o.comment !== r.comment && r.comment) d.push(`teacher comment: "${r.comment.slice(0, 160)}"`);
@@ -365,7 +366,7 @@ function diffGradebook(prev, next, curMp, removedLog) {
   for (const [k, g] of Object.entries(next.grades)) {
     const o = prev.grades[k] == null ? null : +prev.grades[k], [mp, course] = [+k.split("|")[0], k.split("|").slice(1).join("|")];
     if (o == null || !prev.mps.includes(mp) || Math.abs(o - g) < 0.005) continue;
-    add({ kind: "grade", flag: mp !== curMp || g < o, mp, quarter: next.titles[mp] || "",
+    add({ kind: "grade", flag: g < o, mp, quarter: next.titles[mp] || "",
       course, name: "Quarter grade", from: o, to: g, detail: `${o.toFixed(2)}% → ${g.toFixed(2)}%` });
   }
   return ev;
