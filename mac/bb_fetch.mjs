@@ -363,7 +363,7 @@ function diffGradebook(prev, next, curMp, removedLog) {
     if (d.length) add({ kind: "changed", flag, mp: r.mp, quarter: r.quarter, course: r.course, name: r.name, detail: d.join("; ") });
   }
   for (const [k, g] of Object.entries(next.grades)) {
-    const o = prev.grades[k], [mp, course] = [+k.split("|")[0], k.split("|").slice(1).join("|")];
+    const o = prev.grades[k] == null ? null : +prev.grades[k], [mp, course] = [+k.split("|")[0], k.split("|").slice(1).join("|")];
     if (o == null || !prev.mps.includes(mp) || Math.abs(o - g) < 0.005) continue;
     add({ kind: "grade", flag: mp !== curMp || g < o, mp, quarter: next.titles[mp] || "",
       course, name: "Quarter grade", from: o, to: g, detail: `${o.toFixed(2)}% → ${g.toFixed(2)}%` });
